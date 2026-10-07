@@ -1,9 +1,10 @@
+import { mergeGuestInExpense, memberInfoFrom } from '../models.js';
 // ─────────────────────────────────────────────
 // Demo backend — نفس واجهة firebase.js ببيانات محلية (localStorage)
 // يعمل عند ترك إعدادات Firebase فارغة أو عند فتح الرابط بـ ?demo
 // ─────────────────────────────────────────────
 
-const KEY = 'qatta-demo-v3';
+const KEY = 'qatta-demo-v4';
 const delay = (ms) => new Promise(r => setTimeout(r, ms));
 const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString();
 
@@ -12,7 +13,7 @@ const DEMO_USER = { uid: ME, email: '', displayName: 'محمد العلي', meth
 
 const M = {
   user_001: { name: 'محمد العلي',   phone: '+966501112233', avatarColor: '#4F6AF0' },
-  user_002: { name: 'سارة الأحمد',  phone: '+966509998877', avatarColor: '#E25C5C' },
+  user_002: { name: 'سارة الأحمد',  phone: '+966509998877', avatarColor: '#E25C5C', bankName: 'مصرف الراجحي', iban: 'SA0380000000608010167519' },
   user_003: { name: 'خالد المطيري', phone: '+966507776655', avatarColor: '#4CAF82' },
   user_004: { name: 'نورة السعد',   phone: '+966505554433', avatarColor: '#F0A84F' },
 };
@@ -44,12 +45,14 @@ function seed() {
       },
       ISTRAHA7: {
         name: 'قطة الاستراحة', emoji: '🏕️', createdBy: 'user_003', members: ['user_003', ME, 'user_004'],
+        guests: { g_fahad: { name: 'فهد الشمري', phone: '', avatarColor: '#9B59B6', initials: '', addedBy: ME } },
         memberInfo: { user_003: M.user_003, [ME]: M.user_001, user_004: M.user_004 }, createdAt: daysAgo(60), updatedAt: daysAgo(2),
         settlements: [
           { id: 's4', from: 'user_004', to: 'user_003', amount: 50, fromName: M.user_004.name, toName: M.user_003.name, createdBy: 'user_004', createdAt: daysAgo(8) },
         ],
         expenses: [
           exp('e5', 'عشاء في مطعم البيك', 240, 'food', ME, [P(ME, 80, true), P('user_003', 80, false), P('user_004', 80, false)], 2, 'احتفال عيد ميلاد خالد'),
+          exp('e8', 'قهوة وحلا', 90, 'food', 'g_fahad', [P(ME, 30, false), { id: 'g_fahad', name: 'فهد الشمري', phone: '', avatarColor: '#9B59B6', shareAmount: 30, isGuest: true }, P('user_004', 30, false)], 3),
           exp('e6', 'حطب وفحم', 150, 'other', 'user_003', [P('user_003', 50, true), P(ME, 50, false), P('user_004', 50, true)], 9),
         ],
       },
@@ -78,7 +81,7 @@ export function createDemoBackend() {
   const expL = new Map(); // code → Set(cb)
   const setL = new Map(); // code → Set(cb)
 
-  const reviveG = (code, g) => ({ id: code, name: g.name, emoji: g.emoji, createdBy: g.createdBy, members: [...g.members],
+  const reviveG = (code, g) => ({ id: code, name: g.name, emoji: g.emoji, createdBy: g.createdBy, members: [...g.members], guests: JSON.parse(JSON.stringify(g.guests || {})),
     memberInfo: JSON.parse(JSON.stringify(g.memberInfo)), createdAt: new Date(g.createdAt), updatedAt: new Date(g.updatedAt) });
   const reviveE = (e) => ({ ...e, participants: e.participants.map(p => ({ ...p })), createdAt: new Date(e.createdAt), updatedAt: new Date(e.updatedAt) });
   const myGroups = () => Object.entries(db.groups).filter(([, g]) => g.members.includes(ME)).map(([c, g]) => reviveG(c, g));
@@ -106,7 +109,7 @@ export function createDemoBackend() {
     async getProfile() { return db.profile ? { ...db.profile } : null; },
     async saveProfile(uid, data, codes = []) {
       db.profile = { ...db.profile, ...data };
-      for (const c of codes) if (db.groups[c]) db.groups[c].memberInfo[uid] = { name: data.name, phone: data.phone || '', avatarColor: data.avatarColor, initials: data.initials || '' };
+      for (const c of codes) if (db.groups[c]) db.groups[c].memberInfo[uid] = memberInfoFrom(data);
       persist(); emitGroups();
     },
 
@@ -130,6 +133,34 @@ export function createDemoBackend() {
       g.name = name; g.emoji = emoji; g.updatedAt = new Date().toISOString();
       persist(); emitGroups();
     },
+    async addGuest(code, gid, info) {
+      const g = db.groups[code]; if (!g) return;
+      (g.guests ||= {})[gid] = info; persist(); emitGroups();
+    },
+    async updateGuest(code, gid, info) {
+      const g = db.groups[code]; if (!g) return;
+      (g.guests ||= {})[gid] = info; persist(); emitGroups();
+    },
+    async removeGuest(code, gid) {
+      const g = db.groups[code]; if (!g?.guests) return;
+      delete g.guests[gid]; persist(); emitGroups();
+    },
+    async claimGuest(code, gid, uid, info) {
+      const g = db.groups[code]; if (!g) return;
+      if (!g.members.includes(uid)) { g.members.push(uid); g.memberInfo[uid] = info; }
+      for (const e of g.expenses) {
+        const m = mergeGuestInExpense(e, gid, uid, info);
+        if (m) Object.assign(e, m, { updatedAt: new Date().toISOString() });
+      }
+      g.settlements = (g.settlements || []).map(x => ({
+        ...x, from: x.from === gid ? uid : x.from, to: x.to === gid ? uid : x.to,
+        fromName: x.from === gid ? info.name : x.fromName, toName: x.to === gid ? info.name : x.toName,
+      })).filter(x => x.from !== x.to);
+      if (g.guests) delete g.guests[gid];
+      persist(); emitGroups(); emitExp(code); emitSet(code);
+    },
+    async autoClaimGuests() { return []; },
+    async addRecoveryEmail() { await delay(400); },
     async deleteGroup(code) { delete db.groups[code]; persist(); emitGroups(); },
 
     subscribeExpenses(code, onData) {

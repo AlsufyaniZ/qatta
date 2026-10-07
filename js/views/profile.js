@@ -9,7 +9,9 @@ export function mountProfile(root, ctx, { edit = false } = {}) {
   const user = ctx.state.user;
   const existing = ctx.state.profile || {};
   let color = existing.avatarColor || randomAvatarColor();
+  // حساب جوال بدون بريد (بريد داخلي) · أو رقم دخول مرتبط بحساب بريد
   const isPhoneAccount = user.method === 'phone';
+  const loginPhone = existing.loginPhone || (isPhoneAccount ? existing.phone : '');
 
   let cc = '+966', local = '';
   if (existing.phone) {
@@ -39,12 +41,14 @@ export function mountProfile(root, ctx, { edit = false } = {}) {
           ${field({ id: 'name', label: 'الاسم', ic: 'user', placeholder: 'مثال: محمد العلي', value: existing.name || user.displayName || '', autocomplete: 'name' })}
           ${field({ id: 'initials', label: 'رمز الصورة الرمزية (حرفان — اختياري)', ic: 'edit', placeholder: autoInitials(existing.name || user.displayName || ''), value: existing.initials || '' })}
 
-          ${isPhoneAccount
-            ? `<div class="readonly-row">${icon('phone', 17)}<div><span class="field-label">رقم الجوال (للدخول)</span><b dir="ltr">${esc(existing.phone)}</b></div></div>`
+          ${loginPhone
+            ? `<div class="readonly-row">${icon('phone', 17)}<div><span class="field-label">رقم الجوال (للدخول)</span><b dir="ltr">${esc(loginPhone)}</b></div></div>`
             : phoneField({ id: 'phone', cc, value: local, hint: '(اختياري)', countries: COUNTRY_CODES })}
 
           ${isPhoneAccount
-            ? field({ id: 'email', label: 'البريد الإلكتروني (اختياري)', ic: 'mail', type: 'email', placeholder: 'name@example.com', value: existing.email || '', dir: 'ltr', inputmode: 'email' })
+            ? `${field({ id: 'email', label: 'البريد الإلكتروني (لاستعادة كلمة المرور)', ic: 'mail', type: 'email', placeholder: 'name@example.com', value: existing.pendingEmail || '', dir: 'ltr', inputmode: 'email' })}
+               <p class="hint-box warn" id="no-email-hint">${icon('alert', 15)}<span>${existing.pendingEmail ? 'أرسلنا رابط تأكيد إلى بريدك — بعد الضغط عليه تتفعّل الاستعادة بالبريد.' : 'حسابك بدون بريد إلكتروني، لذلك لا يمكن استعادة كلمة المرور إذا نسيتها. أضف بريدك لتفعيل الاستعادة.'}</span></p>
+               <div id="pw-wrap" hidden>${field({ id: 'cur-pw', label: 'كلمة المرور الحالية (للتأكيد)', ic: 'lock', type: 'password', placeholder: '••••••••', dir: 'ltr', autocomplete: 'current-password' })}</div>`
             : `<div class="readonly-row">${icon('mail', 17)}<div><span class="field-label">البريد الإلكتروني</span><b dir="ltr">${esc(user.email)}</b></div></div>`}
 
           <div class="form-error" id="form-error" hidden></div>
@@ -73,6 +77,11 @@ export function mountProfile(root, ctx, { edit = false } = {}) {
     refreshAvatar();
   }, { signal }));
   $('#back')?.addEventListener('click', () => ctx.back(), { signal });
+  // إظهار حقل كلمة المرور عند إدخال بريد جديد لحساب الجوال
+  $('#email')?.addEventListener('input', () => {
+    const v = $('#email').value.trim().toLowerCase();
+    $('#pw-wrap').hidden = !v || v === (existing.pendingEmail || '');
+  }, { signal });
 
   $('#profile-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -84,18 +93,31 @@ export function mountProfile(root, ctx, { edit = false } = {}) {
 
     let phone = existing.phone || '';
     let email = existing.email || user.email || '';
-    if (!isPhoneAccount) {
+    let newRecovery = null;
+    if (!loginPhone) {
       const raw = $('#phone').value.trim();
       phone = raw ? toE164($('#phone-cc').value, raw) : '';
       if (raw && !phone) return showError('يرجى إدخال رقم جوال صحيح');
-    } else {
-      email = $('#email').value.trim().toLowerCase();
-      if (email && !/^\S+@\S+\.\S+$/.test(email)) return showError('البريد الإلكتروني غير صحيح');
+    }
+    if (isPhoneAccount) {
+      const v = $('#email').value.trim().toLowerCase();
+      if (v && !/^\S+@\S+\.\S+$/.test(v)) return showError('البريد الإلكتروني غير صحيح');
+      if (v && v !== (existing.pendingEmail || '')) {
+        const pw = $('#cur-pw').value;
+        if (pw.length < 6) return showError('أدخل كلمة المرور الحالية لتأكيد إضافة البريد');
+        newRecovery = { email: v, pw };
+      }
     }
 
     const profile = { name, phone, email, avatarColor: color, initials: twoChars(iniInput.value.trim()) };
     setLoading(btn, true);
     try {
+      if (newRecovery) {
+        await ctx.backend.addRecoveryEmail(loginPhone, newRecovery.email, newRecovery.pw);
+        profile.pendingEmail = newRecovery.email;
+        profile.loginPhone = loginPhone;
+        toast('أرسلنا رابط تأكيد إلى بريدك — افتحه لتفعيل الاستعادة', 'success');
+      }
       await ctx.backend.saveProfile(user.uid, profile, ctx.state.groups.map(g => g.id));
       ctx.setProfile({ ...existing, ...profile });
       if (edit) { toast('تم حفظ التغييرات', 'success'); ctx.back(); } else ctx.go('');

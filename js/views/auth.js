@@ -53,7 +53,8 @@ export function mountAuth(root, ctx) {
             ${mode !== 'reset' ? field({ id: 'password', label: 'كلمة المرور', ic: 'lock', type: 'password', placeholder: '••••••••', autocomplete: mode === 'login' ? 'current-password' : 'new-password', dir: 'ltr' }) : ''}
 
             ${mode === 'register' && method === 'phone'
-              ? field({ id: 'email', label: 'البريد الإلكتروني (اختياري)', ic: 'mail', type: 'email', placeholder: 'name@example.com', value: kept.email, autocomplete: 'email', dir: 'ltr', inputmode: 'email' })
+              ? field({ id: 'email', label: 'البريد الإلكتروني (اختياري — لاستعادة كلمة المرور)', ic: 'mail', type: 'email', placeholder: 'name@example.com', value: kept.email, autocomplete: 'email', dir: 'ltr', inputmode: 'email' })
+                + `<p class="hint-box warn" id="no-email-hint" ${kept.email ? 'hidden' : ''}>${icon('alert', 15)}<span>بدون بريد إلكتروني لن تتمكن من استعادة كلمة المرور إذا نسيتها.</span></p>`
               : ''}
 
             <div class="form-error" id="form-error" hidden></div>
@@ -69,7 +70,7 @@ export function mountAuth(root, ctx) {
             <div class="or"><span>أو</span></div>
             <button type="button" class="btn-google" id="google-btn">${GOOGLE_LOGO}<span>المتابعة باستخدام Google</span><i class="spinner"></i></button>
           ` : `
-            <p class="hint-box">${icon('info', 15)}<span>الاستعادة بالبريد متاحة للحسابات المسجّلة بالبريد. حسابات رقم الجوال لا يمكن استعادتها حالياً لأنها تتطلب رسائل SMS.</span></p>
+            <p class="hint-box">${icon('info', 15)}<span>أدخل البريد المرتبط بحسابك (سواء سجّلت بالبريد أو بالجوال مع بريد). الحسابات المسجّلة بالجوال بدون بريد لا يمكن استعادتها.</span></p>
             <button type="button" class="link-btn" data-mode="login">${icon('chevronRight', 16)} العودة لتسجيل الدخول</button>
           `}
           <p class="disclaimer">بالمتابعة، أنت توافق على شروط الاستخدام وسياسة الخصوصية</p>
@@ -145,6 +146,8 @@ export function mountAuth(root, ctx) {
     }, { signal }));
 
     const form = root.querySelector('#auth-form');
+    const hint = root.querySelector('#no-email-hint');
+    if (hint) root.querySelector('#email').addEventListener('input', (e) => { hint.hidden = !!e.target.value.trim(); }, { signal });
     form.addEventListener('submit', (ev) => { ev.preventDefault(); submit(); }, { signal });
     // Enter في أي حقل يرسل النموذج مباشرة
     form.addEventListener('keydown', (ev) => {

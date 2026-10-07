@@ -3,10 +3,10 @@
 //   المصاريف الإجمالية (بمدى زمني) · الفلوس اللي لي/علي (تسوية صافية)
 //   تبويب المصاريف · تبويب تصفية الحسابات · مشاركة واتساب · إدارة الأعضاء
 // ─────────────────────────────────────────────
-import { icon, esc, avatar, money, moneyText, num, relTime, toast, errorMessage, openSheet, shareText, WA_LOGO, brandBar } from '../ui.js';
+import { icon, esc, avatar, money, moneyText, num, relTime, toast, errorMessage, openSheet, shareText, WA_LOGO, brandBar, field, phoneField } from '../ui.js';
 import {
   T, PERIODS, category, periodTotals, expensesInPeriod, groupMembers, groupNets, simplifyDebts, myBalance,
-  isMe, myParticipant, iAmPayer, payerOf, isZero,
+  isMe, myParticipant, iAmPayer, payerOf, isZero, formatIban, toE164, COUNTRY_CODES,
 } from '../models.js';
 import { openAddExpense } from './add-expense.js';
 import { openInvite, inviteLink, openEditGroup } from './group-sheets.js';
@@ -79,7 +79,7 @@ export function mountGroup(root, ctx, code) {
         <div class="deco deco-1"></div>
         <span class="bal-label">${icon('wallet', 15)} المصاريف الإجمالية · ${pLabel.months ? 'آخر ' + pLabel.label : 'كل الفترات'}</span>
         <strong class="bal-hero sm">${money(pt.total)}</strong>
-        <span class="dash-sub">${num(pt.count)} مصروف · حصتي ${money(pt.myShare)}</span>
+        <span class="dash-sub">حصتي ${money(pt.myShare)}</span>
         <button class="stats-btn" data-act="stats">${icon('pie', 15)}<span>الإحصائيات</span></button>
       </div>
       <div class="dash-row">
@@ -101,8 +101,8 @@ export function mountGroup(root, ctx, code) {
     $('#members').innerHTML = `
       <div class="members-strip">
         ${members.map(m => `
-          <button class="member" data-member="${esc(m.uid)}" title="${esc(m.name)}">
-            ${avatar(m.name, m.avatarColor, 38, m.initials)}
+          <button class="member ${m.isGuest ? 'guest' : ''}" data-member="${esc(m.uid)}" title="${esc(m.name)}">
+            <span class="av-wrap">${avatar(m.name, m.avatarColor, 38, m.initials)}${m.iban ? `<i class="bank-dot" title="لديه حساب بنكي">${icon('wallet', 10)}</i>` : ''}</span>
             <span>${esc(m.uid === me.uid ? 'أنت' : first(m.name))}</span>
           </button>`).join('')}
         <button class="member add" data-act="invite"><span class="add-ic">${icon('userPlus', 18)}</span><span>دعوة</span></button>
@@ -267,7 +267,7 @@ export function mountGroup(root, ctx, code) {
   }
 
   // ── تقرير المشاركة (واتساب / نسخ / مشاركة) ──
-  const shareOpts = { emoji: true, bold: true, link: true, members: false, period: true };
+  const shareOpts = { emoji: true, bold: true, link: true, members: true, period: true };
   function buildReport(o) {
     const g = group();
     const pt = periodTotals(expenses(), me, state.period);
@@ -277,7 +277,7 @@ export function mountGroup(root, ctx, code) {
     const e = (x) => (o.emoji ? x + ' ' : '');
     const b = (x) => (o.bold ? `*${x}*` : x);
     const lines = [b(`${o.emoji && g.emoji ? g.emoji + ' ' : ''}${g.name}`)];
-    if (o.period) lines.push(`${e('🧾')}إجمالي المصاريف (${pLabel.months ? 'آخر ' + pLabel.label : 'كل الفترات'}): ${b(moneyText(pt.total))} · ${pt.count} مصروف`);
+    if (o.period) lines.push(`${e('🧾')}إجمالي المصاريف (${pLabel.months ? 'آخر ' + pLabel.label : 'كل الفترات'}): ${b(moneyText(pt.total))}`);
     lines.push('');
     if (transfers.length) {
       lines.push(b(`${e('💸')}تصفية الحسابات:`));
@@ -351,30 +351,175 @@ export function mountGroup(root, ctx, code) {
     el.querySelector('[data-opt="leave"]')?.addEventListener('click', go(confirmLeave));
   }
 
-  function openMembers(focusUid = null) {
+  // ── قائمة الأعضاء ──
+  function openMembers() {
     const g = group();
     const members = groupMembers(g);
     const nets = groupNets(expenses(), settlements(), g);
     const { el, close } = openSheet(`
-      <div class="card-title"><h2>الأعضاء</h2><p>${isOwner() ? 'يمكنك إزالة أي عضو — تبقى مصاريفه وديونه في المجموعة' : 'أعضاء المجموعة وأرصدتهم'}</p></div>
+      <div class="card-title"><h2>الأعضاء</h2><p>اضغط على أي عضو لعرض تفاصيله ومعلومات الدفع</p></div>
       <div class="card net-list">
         ${members.map(m => {
           const n = nets.get(m.uid)?.net || 0;
           return `
-          <div class="net-row ${focusUid === m.uid ? 'focus' : ''}">
+          <button class="net-row as-btn" data-card="${esc(m.uid)}">
             ${avatar(m.name, m.avatarColor, 34, m.initials)}
-            <span class="grow"><span>${esc(m.name)}${m.uid === me.uid ? ' <em class="tag">أنت</em>' : ''}${m.uid === g.createdBy ? ' <em class="tag tag-accent">المنشئ</em>' : ''}</span>
+            <span class="grow"><span>${esc(m.name)}${m.uid === me.uid ? ' <em class="tag">أنت</em>' : ''}${m.uid === g.createdBy ? ' <em class="tag tag-accent">المنشئ</em>' : ''}${m.isGuest ? ' <em class="tag tag-muted">ضيف</em>' : ''}</span>
               <small class="net-amt ${isZero(n) ? '' : n > 0 ? 'pos' : 'neg'}">${isZero(n) ? 'مصفّى' : (n > 0 ? 'له ' : 'عليه ') + money(Math.abs(n))}</small></span>
-            ${isOwner() && m.uid !== me.uid ? `<button class="undo-btn danger" data-remove="${esc(m.uid)}">إزالة</button>` : ''}
-          </div>`;
+            ${m.iban ? `<span class="bank-badge" title="لديه حساب بنكي">${icon('wallet', 14)}<span>آيبان</span></span>` : ''}
+            <span class="chev-l">${icon('chevronLeft', 16)}</span>
+          </button>`;
         }).join('')}
       </div>
       <button class="btn-tint" data-invite>${icon('userPlus', 18)}<span>دعوة أعضاء</span></button>`, { label: 'الأعضاء' });
     el.querySelector('[data-invite]').addEventListener('click', () => { close(); setTimeout(() => openInvite(ctx, g), 280); });
-    el.querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', () => {
-      const m = members.find(x => x.uid === b.dataset.remove);
-      close(); setTimeout(() => confirmRemove(m), 280);
+    el.querySelectorAll('[data-card]').forEach(b => b.addEventListener('click', () => { close(); setTimeout(() => openMemberCard(b.dataset.card), 280); }));
+  }
+
+  // ── بطاقة العضو: التفاصيل + الحساب البنكي + التذكير + إدارة الضيف ──
+  function openMemberCard(uid) {
+    const g = group();
+    const m = groupMembers(g).find(x => x.uid === uid);
+    if (!m) return;
+    const nets = groupNets(expenses(), settlements(), g);
+    const n = nets.get(uid)?.net || 0;
+    const mine = uid === me.uid;
+    const involved = simplifyDebts(nets).filter(t => t.from.id === uid || t.to.id === uid);
+    const { el, close } = openSheet(`
+      <div class="member-card">
+        ${avatar(m.name, m.avatarColor, 72, m.initials)}
+        <h2>${esc(m.name)}</h2>
+        <div class="mc-tags">${mine ? '<em class="tag">أنت</em>' : ''}${uid === g.createdBy ? '<em class="tag tag-accent">المنشئ</em>' : ''}${m.isGuest ? '<em class="tag tag-muted">ضيف — لم يسجّل بعد</em>' : ''}</div>
+        ${m.phone ? `<span class="mc-phone" dir="ltr">${esc(m.phone)}</span>` : ''}
+        <span class="net-amt big ${isZero(n) ? '' : n > 0 ? 'pos' : 'neg'}">${isZero(n) ? 'حساباته مصفّاة ✓' : (n > 0 ? 'له ' : 'عليه ') + money(Math.abs(n))}</span>
+      </div>
+
+      ${m.iban ? `
+        <div class="bank-box">
+          <div class="bank-head">${icon('wallet', 16)}<b>${esc(m.bankName || 'الحساب البنكي')}</b>${m.accountHolder ? `<small>${esc(m.accountHolder)}</small>` : ''}</div>
+          <div class="iban-row"><span dir="ltr">${esc(formatIban(m.iban))}</span><button class="copy-btn" data-copy="${esc(m.iban)}">${icon('copy', 15)}<span>نسخ</span></button></div>
+        </div>` : (mine ? `<button class="btn-tint" data-go-bank>${icon('wallet', 18)}<span>أضف حسابك البنكي لاستقبال التحويلات</span></button>` : '')}
+
+      <div class="action-list">
+        ${!mine && involved.length ? `<button data-mc="remind">${icon('share', 19)}<span>تذكير ${esc(first(m.name))} بتصفية الحسابات</span></button>` : ''}
+        ${m.isGuest ? `<button data-mc="phone">${icon('phone', 19)}<span>${m.phone ? 'تعديل رقم الجوال' : 'إضافة رقم جوال'}</span></button>` : ''}
+        ${m.isGuest ? `<button data-mc="merge">${icon('users', 19)}<span>هذا أنا — ادمج الضيف مع حسابي</span></button>` : ''}
+        ${isOwner() && !mine ? `<button data-mc="remove" class="danger">${icon('trash', 19)}<span>${m.isGuest ? 'حذف الضيف من المجموعة' : 'إزالة من المجموعة'}</span></button>` : ''}
+      </div>`, { label: m.name });
+    el.querySelector('[data-copy]')?.addEventListener('click', async (ev) => {
+      try { await navigator.clipboard.writeText(ev.currentTarget.dataset.copy); toast('تم نسخ رقم الآيبان', 'success'); }
+      catch { toast('تعذّر النسخ', 'error'); }
+    });
+    el.querySelector('[data-go-bank]')?.addEventListener('click', () => { close(); ctx.go('bank'); });
+    const after = (fn) => () => { close(); setTimeout(fn, 280); };
+    el.querySelector('[data-mc="remind"]')?.addEventListener('click', after(() => openReminder(uid)));
+    el.querySelector('[data-mc="phone"]')?.addEventListener('click', after(() => openGuestPhone(m)));
+    el.querySelector('[data-mc="merge"]')?.addEventListener('click', after(() => confirmMerge(m)));
+    el.querySelector('[data-mc="remove"]')?.addEventListener('click', after(() => (m.isGuest ? confirmRemoveGuest(m) : confirmRemove(m))));
+  }
+
+  // ── رسالة تذكير مخصصة لشخص واحد ──
+  const remindOpts = { emoji: true, bold: true, iban: true, link: true };
+  function buildReminder(uid, o) {
+    const g = group();
+    const nets = groupNets(expenses(), settlements(), g);
+    const person = nets.get(uid);
+    const ts = simplifyDebts(nets).filter(t => t.from.id === uid || t.to.id === uid);
+    const info = (id) => g.memberInfo?.[id] || {};
+    const e = (x) => (o.emoji ? x + ' ' : '');
+    const b = (x) => (o.bold ? `*${x}*` : x);
+    const L = [`${e('👋')}مرحباً ${first(person.name)}`, `تذكير بتصفية حسابات ${b(`${o.emoji && g.emoji ? g.emoji + ' ' : ''}${g.name}`)}:`, ''];
+    for (const t of ts) {
+      if (t.from.id === uid) {
+        L.push(`• عليك تحويل ${b(moneyText(t.amount))} إلى ${t.to.name}`);
+        const bi = info(t.to.id);
+        if (o.iban && bi.iban) L.push(`  ${e('🏦')}${bi.bankName ? bi.bankName + ' — ' : ''}${formatIban(bi.iban)}${bi.accountHolder ? ` (${bi.accountHolder})` : ''}`);
+      } else {
+        L.push(`• ${t.from.name} سيحوّل لك ${b(moneyText(t.amount))}`);
+      }
+    }
+    if (o.link) L.push('', `${e('🔗')}تفاصيل المجموعة: ${inviteLink(g.id)}`);
+    L.push('', `شكراً${o.emoji ? ' 🙏' : ''}`);
+    return L.join('\n');
+  }
+
+  function openReminder(uid) {
+    const g = group();
+    const m = groupMembers(g).find(x => x.uid === uid) || {};
+    const opt = (k, label) => `<label class="opt-row"><span>${label}</span><input type="checkbox" data-opt-k="${k}" ${remindOpts[k] ? 'checked' : ''}><i class="sw-ui"></i></label>`;
+    const waNum = (m.phone || '').replace(/\D/g, '');
+    const { el } = openSheet(`
+      <div class="card-title"><h2>تذكير ${esc(first(m.name || ''))}</h2><p>رسالة مخصصة له بالمبالغ المطلوبة${waNum ? ' — تُفتح محادثته في واتساب مباشرة' : ''}</p></div>
+      <div class="msg-preview" id="msg" dir="rtl"></div>
+      <div class="card opt-list">
+        ${opt('emoji', 'الإيموجي')}
+        ${opt('bold', 'خط عريض (تنسيق واتساب)')}
+        ${opt('iban', 'رقم الآيبان للدائن')}
+        ${opt('link', 'رابط المجموعة')}
+      </div>
+      <div class="share-actions">
+        <button class="btn-whatsapp" data-share="wa">${WA_LOGO}<span>واتساب</span></button>
+        <button class="btn-tint" data-share="copy">${icon('copy', 18)}<span>نسخ النص</span></button>
+        ${navigator.share ? `<button class="btn-tint" data-share="native">${icon('share', 18)}<span>مشاركة</span></button>` : ''}
+      </div>`, { label: 'تذكير' });
+    const render = () => { el.querySelector('#msg').textContent = buildReminder(uid, remindOpts); };
+    el.querySelectorAll('[data-opt-k]').forEach(c => c.addEventListener('change', () => { remindOpts[c.dataset.optK] = c.checked; render(); }));
+    el.querySelectorAll('[data-share]').forEach(btn => btn.addEventListener('click', async () => {
+      const text = buildReminder(uid, remindOpts);
+      if (btn.dataset.share === 'wa') window.open(`https://wa.me/${waNum}?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+      else if (btn.dataset.share === 'copy') {
+        try { await navigator.clipboard.writeText(text); toast('تم نسخ النص', 'success'); }
+        catch { toast('تعذّر النسخ', 'error'); }
+      } else await shareText({ title: 'تذكير', text });
     }));
+    render();
+  }
+
+  // ── الضيوف: رقم الجوال، الدمج، الحذف ──
+  function openGuestPhone(m) {
+    let cc = '+966', local = '';
+    if (m.phone) { const c = COUNTRY_CODES.find(x => m.phone.startsWith(x.code)); if (c) { cc = c.code; local = m.phone.slice(c.code.length); } }
+    const { el, close } = openSheet(`
+      <div class="card-title"><h2>رقم جوال ${esc(first(m.name))}</h2><p>عندما يسجّل بهذا الرقم تنتقل مصاريفه ومدفوعاته إلى حسابه تلقائياً</p></div>
+      <form id="gp-form" novalidate>
+        ${phoneField({ id: 'gp', cc, value: local, countries: COUNTRY_CODES })}
+        <div class="form-error" id="gp-err" hidden></div>
+        <button class="btn-primary" type="submit"><span>حفظ</span><i class="spinner"></i></button>
+      </form>`, { label: 'رقم الجوال' });
+    el.querySelector('#gp-form').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const phone = toE164(el.querySelector('#gp-cc').value, el.querySelector('#gp').value);
+      const err = el.querySelector('#gp-err');
+      if (!phone) { err.innerHTML = `${icon('alert', 15)}<span>رقم الجوال غير صحيح</span>`; err.hidden = false; return; }
+      const btn = ev.target.querySelector('.btn-primary'); btn.classList.add('loading'); btn.disabled = true;
+      try {
+        const { uid, isGuest, ...rest } = m;
+        await backend.updateGuest(code, m.uid, { ...rest, phone }, m.phone || '');
+        close(); toast('تم حفظ رقم الجوال', 'success');
+      } catch (e) { console.warn(e); toast(errorMessage(e), 'error'); btn.classList.remove('loading'); btn.disabled = false; }
+    });
+  }
+
+  function confirmMerge(m) {
+    confirmSheet({
+      title: `دمج «${esc(m.name)}» مع حسابك؟`,
+      body: `ستنتقل كل مصاريف ومدفوعات وتسويات هذا الضيف إلى حسابك، ثم يُحذف الضيف من المجموعة. استخدم هذا الخيار فقط إذا كان هذا الضيف هو أنت.`,
+      cta: 'نعم، ادمج مع حسابي',
+      danger: false,
+      onConfirm: async () => {
+        await backend.claimGuest(code, m.uid, me.uid, ctx.myInfo(), m);
+        toast('تم الدمج — انتقلت المصاريف إلى حسابك', 'success');
+      },
+    });
+  }
+
+  function confirmRemoveGuest(m) {
+    confirmSheet({
+      title: `حذف الضيف ${esc(m.name)}؟`,
+      body: 'يُحذف من قائمة الأعضاء فقط، وتبقى مصاريفه وديونه في المجموعة كما هي.',
+      cta: 'حذف الضيف',
+      onConfirm: async () => { await backend.removeGuest(code, m.uid, m.phone || ''); toast('تم حذف الضيف', 'success'); },
+    });
   }
 
   function confirmSheet({ title, body, cta, danger = true, onConfirm }) {
@@ -487,7 +632,7 @@ export function mountGroup(root, ctx, code) {
     if (act === 'stats') return ctx.go('stats/' + code);
     if (act === 'share') return openShare();
 
-    if (t.dataset.member) return openMembers(t.dataset.member);
+    if (t.dataset.member) return openMemberCard(t.dataset.member);
     if (t.dataset.period) { state.period = t.dataset.period; animateList = true; renderPeriods(); renderDash(); renderTab(group()); return; }
     if (t.dataset.tab) { state.groupTab = t.dataset.tab; animateList = true; renderTab(group()); return; }
 

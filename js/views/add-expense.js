@@ -22,7 +22,7 @@ export function openAddExpense(ctx, group, existing = null) {
     note: '',
     payer: me.uid,
     // كل الأعضاء مختارون افتراضياً
-    people: members.map(m => ({ id: m.uid, name: m.name, phone: m.phone, avatarColor: m.avatarColor, initials: m.initials || '', selected: true, isGuest: false, shareAmount: 0 })),
+    people: members.map(m => ({ id: m.uid, name: m.name, phone: m.phone, avatarColor: m.avatarColor, initials: m.initials || '', selected: true, isGuest: !!m.isGuest, inGroup: true, shareAmount: 0 })),
   };
 
   // ── وضع التعديل: تعبئة القيم الحالية ──
@@ -103,7 +103,7 @@ export function openAddExpense(ctx, group, existing = null) {
           <section class="anim-up d3">
             <div class="sec-head-row">
               <h3 class="sec-head" id="p-head"></h3>
-              <button class="link-btn" data-act="add-guest">${icon('userPlus', 15)} ضيف من خارج المجموعة</button>
+              <button class="link-btn" data-act="add-guest">${icon('userPlus', 15)} إضافة ضيف</button>
             </div>
             <div id="participants"></div>
             <div id="validation"></div>
@@ -133,7 +133,7 @@ export function openAddExpense(ctx, group, existing = null) {
       <div class="sheet-backdrop" id="p-sheet" hidden>
         <div class="sheet">
           <span class="handle"></span>
-          <div class="card-title"><h2>إضافة ضيف</h2><p>شخص ليس عضواً في المجموعة — يظهر في هذا المصروف فقط</p></div>
+          <div class="card-title"><h2>إضافة ضيف</h2><p>شخص لم يسجّل في التطبيق — يصبح ضيفاً في المجموعة، وإذا سجّل لاحقاً برقم جواله تنتقل مصاريفه لحسابه تلقائياً</p></div>
           <form id="p-form" novalidate>
             ${field({ id: 'p-name', label: 'الاسم', ic: 'user', placeholder: 'مثال: خالد العلي' })}
             ${field({ id: 'p-phone', label: 'رقم الجوال (اختياري)', ic: 'phone', type: 'tel', placeholder: '05XXXXXXXX', dir: 'ltr', inputmode: 'tel' })}
@@ -160,7 +160,7 @@ export function openAddExpense(ctx, group, existing = null) {
   }
 
   function renderPayers() {
-    $('#payers').innerHTML = form.people.filter(p => !p.isGuest).map(p => `
+    $('#payers').innerHTML = form.people.map(p => `
       <button class="payer-chip ${form.payer === p.id ? 'on' : ''}" data-payer="${esc(p.id)}">
         ${avatar(p.name, p.avatarColor, 26, p.initials)}<span>${esc(p.id === me.uid ? 'أنا' : p.name.split(' ')[0])}</span>
       </button>`).join('');
@@ -186,7 +186,7 @@ export function openAddExpense(ctx, group, existing = null) {
           : form.split === 'equal'
             ? `<span class="p-amt" data-share="${esc(p.id)}">${money(p.shareAmount)}</span>`
             : `<input class="share-input" data-share-input="${esc(p.id)}" inputmode="decimal" dir="ltr" placeholder="0" value="${p.shareAmount ? p.shareAmount : ''}" aria-label="حصة ${esc(p.name)}">`}
-        ${p.isGuest ? `<button class="rm-btn" data-remove="${esc(p.id)}" aria-label="إزالة ${esc(p.name)}">${icon('xCircle', 19)}</button>` : ''}
+        ${p.isGuest && !p.inGroup ? `<button class="rm-btn" data-remove="${esc(p.id)}" aria-label="إزالة ${esc(p.name)}">${icon('xCircle', 19)}</button>` : ''}
       </div>`;
     }).join('<span class="divider"></span>');
     $('#participants').innerHTML = `<div class="card p-card">${rows}</div>`;
@@ -288,7 +288,7 @@ export function openAddExpense(ctx, group, existing = null) {
     const phone = raw ? toE164('+966', raw) : '';
     if (raw && !phone) return err('رقم الجوال غير صحيح');
     if (phone && form.people.some(p => p.phone === phone)) return err('هذا الرقم موجود بالفعل');
-    form.people.push({ id: 'g_' + Math.random().toString(36).slice(2, 10), name, phone, avatarColor: randomAvatarColor(), selected: true, isGuest: true, shareAmount: 0 });
+    form.people.push({ id: 'g_' + Math.random().toString(36).slice(2, 10), name, phone, avatarColor: randomAvatarColor(), selected: true, isGuest: true, inGroup: false, shareAmount: 0 });
     refreshAll(); closeSheet();
   });
   async function pickContact() {
@@ -327,6 +327,11 @@ export function openAddExpense(ctx, group, existing = null) {
     };
     setLoading(btn, true);
     try {
+      // الضيوف الجدد يصبحون أعضاء (ضيوفاً) في المجموعة
+      for (const p of form.people.filter(x => x.isGuest && !x.inGroup && x.selected || x.isGuest && !x.inGroup && x.id === form.payer)) {
+        await backend.addGuest(group.id, p.id, { name: p.name, phone: p.phone || '', avatarColor: p.avatarColor, initials: '', addedBy: me.uid });
+        p.inGroup = true;
+      }
       if (editing) await backend.updateExpense(group.id, existing.id, expense);
       else await backend.addExpense(group.id, expense);
       toast(editing ? 'تم حفظ التعديلات' : 'تم حفظ المصروف', 'success');

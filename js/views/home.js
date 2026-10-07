@@ -13,11 +13,13 @@ export function mountHome(root, ctx) {
 
   root.innerHTML = `
     <div class="screen home">
-      ${brandBar()}
       <header class="home-header">
-        <div>
+        <div class="hello">
+          <img class="home-logo" src="assets/icons/logo.png" alt="قطة" width="48" height="48">
+          <div>
           <p class="muted sm">${greeting()}</p>
           <h1 class="title">${esc(state.profile?.name || me.displayName)}</h1>
+          </div>
         </div>
         <div class="head-actions">
           <button class="icon-btn" data-act="settings" aria-label="الإعدادات">${icon('settings', 22)}</button>

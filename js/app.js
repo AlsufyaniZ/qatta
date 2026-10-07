@@ -12,6 +12,7 @@ import { mountHome } from './views/home.js';
 import { mountGroup } from './views/group.js';
 import { mountSettings } from './views/settings.js';
 import { mountStats } from './views/stats.js';
+import { mountBank } from './views/bank.js';
 
 const root = document.getElementById('app');
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -111,6 +112,7 @@ function route() {
   if (page === 'group' && arg) show(mountGroup, decodeURIComponent(arg));
   else if (page === 'stats' && arg) show(mountStats, decodeURIComponent(arg));
   else if (page === 'settings') show(mountSettings);
+  else if (page === 'bank') show(mountBank);
   else if (page === 'profile') show(mountProfile, { edit: true });
   else show(mountHome);
 }
@@ -158,6 +160,12 @@ async function boot() {
     try { state.profile = await ctx.backend.getProfile(user.uid); }
     catch (e) { console.warn('[Qatta] profile', e); state.profile = null; toast(errorMessage(e), 'error'); }
     route();
+    // ربط تلقائي: إن أُضيف المستخدم سابقاً كضيف برقم جواله تنتقل مصاريفه لحسابه
+    if (state.profile?.name) {
+      ctx.backend.autoClaimGuests?.(user, ctx.myInfo())
+        .then(names => { if (names?.length) toast(`تمت إضافة مصاريفك السابقة من: ${names.join('، ')}`, 'success'); })
+        .catch(e => console.warn('[Qatta] auto-claim', e));
+    }
   });
 }
 

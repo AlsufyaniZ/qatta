@@ -37,6 +37,11 @@
 - **تعديل المصروف** من منشئه بعد حفظه
 - المبالغ بـ **رمز الريال السعودي الجديد** (خط saudi_riyal، مع «ر.س» احتياطياً)
 
+**الأعضاء والدفع**
+- الضيوف أعضاء في المجموعة؛ إذا أُضيف رقم جواله وسجّل لاحقاً تنتقل مصاريفه لحسابه تلقائياً، أو يدمجها يدوياً من بطاقة الضيف
+- تفضيلات الحساب البنكي (الآيبان واسم البنك) تظهر لأعضاء المجموعة مع زر نسخ
+- تذكير شخصي لعضو واحد بتصفية الحسابات، يتضمن آيبان الدائن، ويُفتح في واتساب مباشرة على رقمه
+
 **عام**
 - **الوضع الغامق** من الإعدادات (ويتبع مظهر الجهاز افتراضياً)
 - مزامنة لحظية بين الأعضاء + عمل دون اتصال
@@ -79,7 +84,8 @@
 
 | المسار | المحتوى |
 |---|---|
-| `users/{uid}` | `name`, `phone`, `email`, `avatarColor` |
+| `users/{uid}` | `name`, `phone`, `email`, `avatarColor`, `initials`, `bankName`, `iban`, `loginPhone` |
+| `phoneIndex/{sha256}` | `uid` + بريد مشفّر بكلمة المرور (للدخول بالجوال لحسابات البريد) |
 | `groups/{CODE}` | `name`, `emoji`, `createdBy`, `members[]`, `memberInfo{uid → name/phone/avatarColor}` |
 | `groups/{CODE}/settlements/{id}` | `from`, `to`, `amount`, `fromName`, `toName`, `createdBy`, `createdAt` |
 | `groups/{CODE}/expenses/{id}` | `title`, `totalAmount`, `category`, `paidByUserId`, `createdBy`, `participants[]`, `splitMethod`, `note`, `createdAt` |

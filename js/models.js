@@ -150,7 +150,7 @@ export function groupNets(expenses = [], settlements = [], group = null) {
   const info = (group && group.memberInfo) || {};
   const touch = (id, p) => {
     if (!nets.has(id)) {
-      const i = info[id] || p || {};
+      const i = info[id] || group?.guests?.[id] || p || {};
       nets.set(id, {
         id, net: 0, name: i.name || 'عضو', avatarColor: i.avatarColor || '#A9AECB', phone: i.phone || '', initials: i.initials || '',
         isGuest: !!(p && p.isGuest), isMember: !!group?.members?.includes(id),
@@ -159,6 +159,7 @@ export function groupNets(expenses = [], settlements = [], group = null) {
     return nets.get(id);
   };
   for (const m of (group?.members || [])) touch(m);
+  for (const [gid, g] of Object.entries(group?.guests || {})) { touch(gid, { ...g, isGuest: true }).isMember = true; nets.get(gid).isGuest = true; }
   for (const e of expenses) {
     const payer = e.participants.find(p => p.id === e.paidByUserId);
     touch(e.paidByUserId, payer).net += e.totalAmount || 0;
@@ -237,11 +238,53 @@ export const memberInfoFrom = (profile) => ({
   phone: profile.phone || '',
   avatarColor: profile.avatarColor || AVATAR_PALETTE[0],
   initials: profile.initials || '',
+  bankName: profile.bankName || '',
+  iban: profile.iban || '',
+  accountHolder: profile.accountHolder || '',
 });
 
+// ── الحساب البنكي (IBAN) ──
+export function normalizeIban(s = '') {
+  return normalizeDigits(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+export function isValidIban(s) {
+  const v = normalizeIban(s);
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(v)) return false;
+  if (v.startsWith('SA') && v.length !== 24) return false;
+  // تحقق MOD-97 القياسي
+  const r = (v.slice(4) + v.slice(0, 4)).replace(/[A-Z]/g, c => String(c.charCodeAt(0) - 55));
+  let m = 0;
+  for (const ch of r) m = (m * 10 + +ch) % 97;
+  return m === 1;
+}
+export const formatIban = (s = '') => normalizeIban(s).replace(/(.{4})/g, '$1 ').trim();
+export const SAUDI_BANKS = ['مصرف الراجحي', 'البنك الأهلي السعودي', 'بنك الرياض', 'البنك السعودي الأول (ساب)', 'البنك السعودي الفرنسي',
+  'البنك العربي الوطني', 'بنك البلاد', 'مصرف الإنماء', 'بنك الجزيرة', 'البنك السعودي للاستثمار', 'بنك الخليج الدولي', 'STC Bank', 'D360 Bank'];
+
 /** قائمة أعضاء المجموعة كمصفوفة مرتبة (المنشئ أولاً) */
-export function groupMembers(group) {
+export function groupMembers(group, { withGuests = true } = {}) {
   const info = group.memberInfo || {};
-  return (group.members || []).map(uid => ({ uid, ...(info[uid] || { name: 'عضو', phone: '', avatarColor: '#A9AECB' }) }))
+  const users = (group.members || []).map(uid => ({ uid, isGuest: false, ...(info[uid] || { name: 'عضو', phone: '', avatarColor: '#A9AECB' }) }))
     .sort((a, b) => (a.uid === group.createdBy ? -1 : b.uid === group.createdBy ? 1 : 0));
+  if (!withGuests) return users;
+  const guests = Object.entries(group.guests || {}).map(([gid, g]) => ({ uid: gid, ...g, isGuest: true }));
+  return [...users, ...guests];
+}
+
+/** دمج ضيف في حساب مستخدم داخل مصروف: يُنقل الدفع والحصة (وتُجمع الحصص إن وُجد الاثنان) */
+export function mergeGuestInExpense(e, gid, uid, info) {
+  const has = e.participants.some(p => p.id === gid) || e.paidByUserId === gid;
+  if (!has) return null;
+  const parts = [];
+  for (const p of e.participants) {
+    const id = p.id === gid ? uid : p.id;
+    const ex = parts.find(x => x.id === id);
+    if (ex) ex.shareAmount = round2((ex.shareAmount || 0) + (p.shareAmount || 0));
+    else parts.push(p.id === gid ? { ...p, id: uid, isGuest: false, name: info.name, phone: info.phone || '', avatarColor: info.avatarColor, initials: info.initials || '' } : { ...p });
+  }
+  return {
+    participants: parts,
+    participantIds: parts.filter(p => !p.isGuest).map(p => p.id),
+    paidByUserId: e.paidByUserId === gid ? uid : e.paidByUserId,
+  };
 }

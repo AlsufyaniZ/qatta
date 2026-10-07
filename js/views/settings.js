@@ -2,6 +2,7 @@
 // Settings — الملف الشخصي · الوضع الغامق · تسجيل الخروج
 // ─────────────────────────────────────────────
 import { icon, esc, avatar, toggle, isDark, setDark, toast, brandBar } from '../ui.js';
+import { formatIban } from '../models.js';
 
 export function mountSettings(root, ctx) {
   const { state, backend } = ctx;
@@ -38,6 +39,15 @@ export function mountSettings(root, ctx) {
         </div>
       </div>
 
+      <h2 class="set-title">تفضيلات الحساب البنكي</h2>
+      <div class="set-group anim-up d2">
+        <button class="set-row" data-act="bank">
+          <span class="set-ic" style="--c:var(--accent)">${icon('wallet', 18)}</span>
+          <span class="set-label">${p.iban ? `${esc(p.bankName || 'الحساب البنكي')}<small class="set-sub" dir="ltr">${esc(formatIban(p.iban))}</small>` : 'أضف حسابك البنكي لاستقبال التحويلات'}</span>
+          <span class="chev-l">${icon('chevronLeft', 18)}</span>
+        </button>
+      </div>
+
       <h2 class="set-title">الحساب</h2>
       <div class="set-group anim-up d2">
         <button class="set-row" data-act="profile">
@@ -56,7 +66,7 @@ export function mountSettings(root, ctx) {
         </button>
       </div>
 
-      <div class="about"><img class="logo-mark sm" src="assets/icons/logo.png" alt="قطة" width="56" height="56"><p class="version">نسخة الويب 4.0</p></div>
+      <div class="about"><img class="logo-mark sm" src="assets/icons/logo.png" alt="قطة" width="56" height="56"><p class="version">نسخة الويب 5.0</p></div>
     </div>`;
 
   root.addEventListener('click', async (ev) => {
@@ -72,6 +82,7 @@ export function mountSettings(root, ctx) {
     const act = t.dataset.act;
     if (act === 'back') ctx.go('');
     if (act === 'profile') ctx.go('profile');
+    if (act === 'bank') ctx.go('bank');
     if (act === 'logout') { await backend.signOut(); history.replaceState(null, '', location.pathname + location.search + '#/'); }
     if (act === 'reset') { await backend.resetDemo(); toast('تمت إعادة البيانات التجريبية', 'success'); }
   }, { signal });
