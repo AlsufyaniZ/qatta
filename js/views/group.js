@@ -1,15 +1,15 @@
 // ─────────────────────────────────────────────
 // Group dashboard
 //   المصاريف الإجمالية (بمدى زمني) · الفلوس اللي لي/علي (تسوية صافية)
-//   تبويب المصاريف · تبويب تقفيل الحساب · مشاركة واتساب · إدارة الأعضاء
+//   تبويب المصاريف · تبويب تصفية الحسابات · مشاركة واتساب · إدارة الأعضاء
 // ─────────────────────────────────────────────
-import { icon, esc, avatar, money, moneyText, num, relTime, toast, errorMessage, openSheet } from '../ui.js';
+import { icon, esc, avatar, money, moneyText, num, relTime, toast, errorMessage, openSheet, shareText, WA_LOGO, brandBar } from '../ui.js';
 import {
   T, PERIODS, category, periodTotals, expensesInPeriod, groupMembers, groupNets, simplifyDebts, myBalance,
   isMe, myParticipant, iAmPayer, payerOf, isZero,
 } from '../models.js';
 import { openAddExpense } from './add-expense.js';
-import { openInvite, inviteLink } from './group-sheets.js';
+import { openInvite, inviteLink, openEditGroup } from './group-sheets.js';
 
 export function mountGroup(root, ctx, code) {
   const { state, backend } = ctx;
@@ -20,7 +20,14 @@ export function mountGroup(root, ctx, code) {
   let leaving = false;
 
   const group = () => state.groups.find(g => g.id === code);
-  const expenses = () => state.expenses.get(code) || [];
+  // يحدّث اسم/لون/رمز المشاركين الأعضاء من بيانات المجموعة الحالية
+  const expenses = () => {
+    const info = group()?.memberInfo || {};
+    return (state.expenses.get(code) || []).map(e => ({
+      ...e,
+      participants: e.participants.map(p => info[p.id] ? { ...p, name: info[p.id].name || p.name, avatarColor: info[p.id].avatarColor || p.avatarColor, initials: info[p.id].initials || '' } : p),
+    }));
+  };
   const settlements = () => state.settlements.get(code) || [];
   const isOwner = () => group()?.createdBy === me.uid;
   const first = (name = '') => name.split(' ')[0];
@@ -29,6 +36,7 @@ export function mountGroup(root, ctx, code) {
   function shell(g) {
     root.innerHTML = `
       <div class="screen home group-page">
+        ${brandBar()}
         <header class="page-head wide">
           <button class="icon-btn" data-act="back" aria-label="رجوع">${icon('chevronRight', 22)}</button>
           <div class="g-head">
@@ -36,8 +44,8 @@ export function mountGroup(root, ctx, code) {
             <h1>${esc(g.name)}</h1>
           </div>
           <div class="head-actions">
-            <button class="icon-btn" data-act="settings" aria-label="الإعدادات">${icon('settings', 21)}</button>
-            <button class="icon-btn" data-act="options" aria-label="خيارات المجموعة">${icon('more', 21)}</button>
+            <button class="icon-btn" data-act="share" aria-label="مشاركة وضع المجموعة" title="مشاركة">${icon('share', 20)}</button>
+            <button class="icon-btn" data-act="options" aria-label="إعدادات المجموعة" title="إعدادات المجموعة">${icon('settings', 21)}</button>
           </div>
         </header>
 
@@ -48,7 +56,7 @@ export function mountGroup(root, ctx, code) {
         <nav class="tabs" id="tabs" role="tablist"></nav>
         <section id="tab-body"></section>
 
-        <button class="fab" data-act="add">${icon('plus', 18)}<span>إضافة مصروف</span></button>
+        <button class="fab" data-act="add">${icon('plus', 18)}<span>قطة جديدة</span></button>
       </div>`;
     rendered = true;
   }
@@ -94,7 +102,7 @@ export function mountGroup(root, ctx, code) {
       <div class="members-strip">
         ${members.map(m => `
           <button class="member" data-member="${esc(m.uid)}" title="${esc(m.name)}">
-            ${avatar(m.name, m.avatarColor, 38)}
+            ${avatar(m.name, m.avatarColor, 38, m.initials)}
             <span>${esc(m.uid === me.uid ? 'أنت' : first(m.name))}</span>
           </button>`).join('')}
         <button class="member add" data-act="invite"><span class="add-ic">${icon('userPlus', 18)}</span><span>دعوة</span></button>
@@ -132,7 +140,7 @@ export function mountGroup(root, ctx, code) {
               <span>${relTime(exp.createdAt)}</span><i class="dot"></i>
               <span>${payer ? (iAmPayer(exp, me) ? 'دفعته أنت' : 'دفعها ' + esc(first(payer.name))) : ''}</span>
             </span>
-            <span class="strip">${exp.participants.filter(p => p.shareAmount > 0).slice(0, 4).map(p => avatar(p.name, p.avatarColor, 22)).join('')}</span>
+            <span class="strip">${exp.participants.filter(p => p.shareAmount > 0).slice(0, 4).map(p => avatar(p.name, p.avatarColor, 22, p.initials)).join('')}</span>
           </span>
           <span class="ex-side">
             <span class="ex-amt">${money(exp.totalAmount)}</span>
@@ -144,7 +152,7 @@ export function mountGroup(root, ctx, code) {
           <div class="ex-details-in">
             ${exp.participants.filter(p => p.shareAmount > 0 || p.id === exp.paidByUserId).map(p => `
               <div class="p-row">
-                ${avatar(p.name, p.avatarColor, 32)}
+                ${avatar(p.name, p.avatarColor, 32, p.initials)}
                 <div class="p-info">
                   <span class="p-name">${esc(p.name)}${isMe(p, me) ? ' <em class="tag">أنت</em>' : ''}${p.id === exp.paidByUserId ? ' <em class="tag tag-accent">الدافع</em>' : ''}${p.isGuest ? ' <em class="tag tag-muted">ضيف</em>' : ''}</span>
                 </div>
@@ -169,7 +177,7 @@ export function mountGroup(root, ctx, code) {
     animateList = false;
   }
 
-  // ── Closing tab (تقفيل الحساب) ──
+  // ── Closing tab (تصفية الحسابات) ──
   function canMarkPaid(t) {
     return t.from.id === me.uid || t.to.id === me.uid || isOwner();
   }
@@ -181,20 +189,15 @@ export function mountGroup(root, ctx, code) {
     const people = [...nets.values()].filter(v => v.isMember || !isZero(v.net)).sort((a, b) => b.net - a.net);
 
     $('#tab-body').innerHTML = `
-      <button class="btn-whatsapp sm-mb" data-act="whatsapp">
-        <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.47 14.38c-.3-.15-1.75-.86-2.02-.96-.27-.1-.47-.15-.67.15-.2.3-.77.96-.94 1.16-.17.2-.35.22-.64.07-.3-.15-1.25-.46-2.38-1.47-.88-.79-1.47-1.76-1.65-2.06-.17-.3-.02-.46.13-.6.13-.14.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.03-.52-.07-.15-.67-1.6-.92-2.2-.24-.58-.49-.5-.67-.5h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.48s1.07 2.88 1.21 3.08c.15.2 2.1 3.2 5.08 4.49.71.3 1.26.49 1.7.63.71.22 1.36.19 1.87.12.57-.09 1.75-.72 2-1.41.25-.7.25-1.29.17-1.41-.07-.13-.27-.2-.57-.35M12.05 21.5h-.01a9.4 9.4 0 0 1-4.8-1.31l-.34-.2-3.56.93.95-3.47-.22-.36a9.4 9.4 0 0 1-1.44-5.02c0-5.2 4.23-9.43 9.44-9.43a9.4 9.4 0 0 1 9.43 9.44c0 5.2-4.24 9.43-9.45 9.43M20.08 3.9A11.27 11.27 0 0 0 12.05.57C5.8.57.7 5.66.7 11.92c0 2 .52 3.95 1.52 5.67L.6 23.43l5.98-1.57a11.3 11.3 0 0 0 5.46 1.39h.01c6.25 0 11.35-5.09 11.35-11.35 0-3.03-1.18-5.88-3.32-8.02"/></svg>
-        <span>مشاركة الوضع في واتساب</span>
-      </button>
-
       ${transfers.length ? `
-        <h3 class="sec-head sm">لتقفيل الحساب، نفّذوا التحويلات التالية</h3>
+        <h3 class="sec-head sm">لتصفية الحسابات، نفّذوا التحويلات التالية</h3>
         <div class="transfer-list">
           ${transfers.map((t, i) => `
             <div class="transfer ${t.from.id === me.uid || t.to.id === me.uid ? 'mine' : ''}">
               <div class="tr-people">
-                <span class="tr-person">${avatar(t.from.name, t.from.avatarColor, 34)}<b>${esc(t.from.id === me.uid ? 'أنت' : first(t.from.name))}</b></span>
+                <span class="tr-person">${avatar(t.from.name, t.from.avatarColor, 34, t.from.initials)}<b>${esc(t.from.id === me.uid ? 'أنت' : first(t.from.name))}</b></span>
                 <span class="tr-arrow">${icon('chevronLeft', 16)}<i>${t.from.id === me.uid ? 'تحوّل' : 'يحوّل'}</i></span>
-                <span class="tr-person">${avatar(t.to.name, t.to.avatarColor, 34)}<b>${esc(t.to.id === me.uid ? 'لك' : first(t.to.name))}</b></span>
+                <span class="tr-person">${avatar(t.to.name, t.to.avatarColor, 34, t.to.initials)}<b>${esc(t.to.id === me.uid ? 'لك' : first(t.to.name))}</b></span>
               </div>
               <div class="tr-side">
                 <strong class="tr-amt">${money(t.amount)}</strong>
@@ -204,7 +207,7 @@ export function mountGroup(root, ctx, code) {
         </div>` : `
         <div class="closed-ok">
           <span class="closed-ic">${icon('checkCircle', 34)}</span>
-          <strong>الحساب مقفل ✓</strong>
+          <strong>الحسابات مصفّاة ✓</strong>
           <span>${expenses().length ? 'لا توجد مبالغ مستحقة بين الأعضاء' : 'لا توجد مصاريف بعد'}</span>
         </div>`}
 
@@ -212,9 +215,9 @@ export function mountGroup(root, ctx, code) {
       <div class="card net-list">
         ${people.map(v => `
           <div class="net-row">
-            ${avatar(v.name, v.avatarColor, 30)}
+            ${avatar(v.name, v.avatarColor, 30, v.initials)}
             <span class="grow"><span>${esc(v.id === me.uid ? 'أنت' : v.name)}${!v.isMember ? ` <em class="tag tag-muted">${v.isGuest ? 'ضيف' : 'غادر'}</em>` : ''}</span></span>
-            <span class="net-amt ${isZero(v.net) ? '' : v.net > 0 ? 'pos' : 'neg'}">${isZero(v.net) ? 'مقفل' : (v.net > 0 ? 'له ' : 'عليه ') + money(Math.abs(v.net))}</span>
+            <span class="net-amt ${isZero(v.net) ? '' : v.net > 0 ? 'pos' : 'neg'}">${isZero(v.net) ? 'مصفّى' : (v.net > 0 ? 'له ' : 'عليه ') + money(Math.abs(v.net))}</span>
           </div>`).join('')}
       </div>
 
@@ -258,28 +261,68 @@ export function mountGroup(root, ctx, code) {
       return;
     }
     if (!rendered) shell(g);
+    $('.g-head h1').textContent = g.name;
+    $('.g-head .g-emoji').textContent = g.emoji || '👥';
     renderPeriods(); renderDash(); renderMembers(g); renderTab(g);
   }
 
-  // ── WhatsApp report ──
-  function whatsappReport() {
+  // ── تقرير المشاركة (واتساب / نسخ / مشاركة) ──
+  const shareOpts = { emoji: true, bold: true, link: true, members: false, period: true };
+  function buildReport(o) {
     const g = group();
     const pt = periodTotals(expenses(), me, state.period);
     const pLabel = PERIODS.find(p => p.id === state.period);
-    const transfers = simplifyDebts(groupNets(expenses(), settlements(), g));
-    const lines = [
-      `*${g.emoji || ''} ${g.name}*`,
-      `🧾 إجمالي المصاريف (${pLabel.months ? 'آخر ' + pLabel.label : 'كل الفترات'}): *${moneyText(pt.total)}* · ${pt.count} مصروف`,
-      '',
-    ];
+    const nets = groupNets(expenses(), settlements(), g);
+    const transfers = simplifyDebts(nets);
+    const e = (x) => (o.emoji ? x + ' ' : '');
+    const b = (x) => (o.bold ? `*${x}*` : x);
+    const lines = [b(`${o.emoji && g.emoji ? g.emoji + ' ' : ''}${g.name}`)];
+    if (o.period) lines.push(`${e('🧾')}إجمالي المصاريف (${pLabel.months ? 'آخر ' + pLabel.label : 'كل الفترات'}): ${b(moneyText(pt.total))} · ${pt.count} مصروف`);
+    lines.push('');
     if (transfers.length) {
-      lines.push('*💸 تقفيل الحساب:*');
-      transfers.forEach(t => lines.push(`• ${t.from.name} يحوّل إلى ${t.to.name}: *${moneyText(t.amount)}*`));
+      lines.push(b(`${e('💸')}تصفية الحسابات:`));
+      transfers.forEach(t => lines.push(`• ${t.from.name} يحوّل إلى ${t.to.name}: ${b(moneyText(t.amount))}`));
     } else {
-      lines.push('✅ *الحساب مقفل* — لا توجد مبالغ مستحقة');
+      lines.push(`${e('✅')}${b('الحسابات مصفّاة')} — لا توجد مبالغ مستحقة`);
     }
-    lines.push('', `_عبر تطبيق قطة_ ${location.origin + location.pathname.replace(/index\.html$/, '')}`);
+    if (o.members) {
+      lines.push('', b(`${e('👥')}صافي كل عضو:`));
+      [...nets.values()].filter(v => v.isMember || !isZero(v.net)).sort((x, y) => y.net - x.net)
+        .forEach(v => lines.push(`• ${v.name}: ${isZero(v.net) ? 'مصفّى' : (v.net > 0 ? 'له ' : 'عليه ') + moneyText(Math.abs(v.net))}`));
+    }
+    if (o.link) lines.push('', `${e('🔗')}الانضمام للمجموعة: ${inviteLink(g.id)}`);
     return lines.join('\n');
+  }
+
+  /** نافذة المشاركة: معاينة الرسالة + خيارات + واتساب / نسخ / مشاركة */
+  function openShare() {
+    const opt = (k, label) => `<label class="opt-row"><span>${label}</span><input type="checkbox" data-opt-k="${k}" ${shareOpts[k] ? 'checked' : ''}><i class="sw-ui"></i></label>`;
+    const { el } = openSheet(`
+      <div class="card-title"><h2>مشاركة وضع المجموعة</h2><p>راجع الرسالة واختر طريقة المشاركة</p></div>
+      <div class="msg-preview" id="msg" dir="rtl"></div>
+      <div class="card opt-list">
+        ${opt('emoji', 'الإيموجي')}
+        ${opt('bold', 'خط عريض (تنسيق واتساب)')}
+        ${opt('period', 'إجمالي المصاريف للفترة المحددة')}
+        ${opt('members', 'صافي كل عضو')}
+        ${opt('link', 'رابط الانضمام للمجموعة')}
+      </div>
+      <div class="share-actions">
+        <button class="btn-whatsapp" data-share="wa">${WA_LOGO}<span>واتساب</span></button>
+        <button class="btn-tint" data-share="copy">${icon('copy', 18)}<span>نسخ النص</span></button>
+        ${navigator.share ? `<button class="btn-tint" data-share="native">${icon('share', 18)}<span>مشاركة</span></button>` : ''}
+      </div>`, { label: 'مشاركة' });
+    const render = () => { el.querySelector('#msg').textContent = buildReport(shareOpts); };
+    el.querySelectorAll('[data-opt-k]').forEach(c => c.addEventListener('change', () => { shareOpts[c.dataset.optK] = c.checked; render(); }));
+    el.querySelectorAll('[data-share]').forEach(btn => btn.addEventListener('click', async () => {
+      const text = buildReport(shareOpts);
+      if (btn.dataset.share === 'wa') window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener');
+      else if (btn.dataset.share === 'copy') {
+        try { await navigator.clipboard.writeText(text); toast('تم نسخ النص', 'success'); }
+        catch { toast('تعذّر النسخ — حدّد النص وانسخه يدوياً', 'error'); }
+      } else await shareText({ title: group().name, text });
+    }));
+    render();
   }
 
   // ── Sheets ──
@@ -287,12 +330,13 @@ export function mountGroup(root, ctx, code) {
     const g = group();
     if (!g) return;
     const { el, close } = openSheet(`
-      <div class="card-title"><h2>${esc(g.emoji || '')} ${esc(g.name)}</h2><p>رمز المجموعة: <b dir="ltr">${esc(g.id)}</b></p></div>
+      <div class="card-title"><h2>إعدادات المجموعة</h2><p>${esc(g.emoji || '')} ${esc(g.name)} · الرمز <b dir="ltr">${esc(g.id)}</b></p></div>
       <div class="action-list">
+        ${isOwner() ? `<button data-opt="edit">${icon('edit', 19)}<span>تعديل اسم المجموعة ورمزها</span></button>` : ''}
         <button data-opt="invite">${icon('userPlus', 19)}<span>دعوة أعضاء</span></button>
         <button data-opt="members">${icon('users', 19)}<span>الأعضاء (${num(g.members.length)})</span></button>
         <button data-opt="stats">${icon('pie', 19)}<span>الإحصائيات</span></button>
-        <button data-opt="whatsapp">${icon('share', 19)}<span>مشاركة الوضع في واتساب</span></button>
+        <button data-opt="share">${icon('share', 19)}<span>مشاركة وضع المجموعة</span></button>
         ${isOwner()
           ? `<button data-opt="delete" class="danger">${icon('trash', 19)}<span>حذف المجموعة</span></button>`
           : `<button data-opt="leave" class="danger">${icon('logout', 19)}<span>الخروج من المجموعة</span></button>`}
@@ -301,13 +345,10 @@ export function mountGroup(root, ctx, code) {
     el.querySelector('[data-opt="invite"]').addEventListener('click', go(() => openInvite(ctx, g)));
     el.querySelector('[data-opt="members"]').addEventListener('click', go(openMembers));
     el.querySelector('[data-opt="stats"]').addEventListener('click', () => { close(); ctx.go('stats/' + code); });
-    el.querySelector('[data-opt="whatsapp"]').addEventListener('click', () => { close(); shareWhatsApp(); });
+    el.querySelector('[data-opt="share"]').addEventListener('click', go(openShare));
+    el.querySelector('[data-opt="edit"]')?.addEventListener('click', go(() => openEditGroup(ctx, group())));
     el.querySelector('[data-opt="delete"]')?.addEventListener('click', go(confirmDeleteGroup));
     el.querySelector('[data-opt="leave"]')?.addEventListener('click', go(confirmLeave));
-  }
-
-  function shareWhatsApp() {
-    window.open('https://wa.me/?text=' + encodeURIComponent(whatsappReport()), '_blank', 'noopener');
   }
 
   function openMembers(focusUid = null) {
@@ -321,9 +362,9 @@ export function mountGroup(root, ctx, code) {
           const n = nets.get(m.uid)?.net || 0;
           return `
           <div class="net-row ${focusUid === m.uid ? 'focus' : ''}">
-            ${avatar(m.name, m.avatarColor, 34)}
+            ${avatar(m.name, m.avatarColor, 34, m.initials)}
             <span class="grow"><span>${esc(m.name)}${m.uid === me.uid ? ' <em class="tag">أنت</em>' : ''}${m.uid === g.createdBy ? ' <em class="tag tag-accent">المنشئ</em>' : ''}</span>
-              <small class="net-amt ${isZero(n) ? '' : n > 0 ? 'pos' : 'neg'}">${isZero(n) ? 'مقفل' : (n > 0 ? 'له ' : 'عليه ') + money(Math.abs(n))}</small></span>
+              <small class="net-amt ${isZero(n) ? '' : n > 0 ? 'pos' : 'neg'}">${isZero(n) ? 'مصفّى' : (n > 0 ? 'له ' : 'عليه ') + money(Math.abs(n))}</small></span>
             ${isOwner() && m.uid !== me.uid ? `<button class="undo-btn danger" data-remove="${esc(m.uid)}">إزالة</button>` : ''}
           </div>`;
         }).join('')}
@@ -366,7 +407,7 @@ export function mountGroup(root, ctx, code) {
     const b = myBalance(expenses(), settlements(), group(), me);
     confirmSheet({
       title: `الخروج من «${esc(group().name)}»؟`,
-      body: `${isZero(b.net) ? 'حسابك مقفل في هذه المجموعة.' : `لديك رصيد غير مسوّى: ${b.net > 0 ? 'لك' : 'عليك'} ${money(Math.abs(b.net))}.`} تبقى مصاريفك وديونك في المجموعة ولا تُحذف، ويمكنك العودة لاحقاً بالرمز.`,
+      body: `${isZero(b.net) ? 'حساباتك مصفّاة في هذه المجموعة.' : `لديك رصيد غير مسوّى: ${b.net > 0 ? 'لك' : 'عليك'} ${money(Math.abs(b.net))}.`} تبقى مصاريفك وديونك في المجموعة ولا تُحذف، ويمكنك العودة لاحقاً بالرمز.`,
       cta: 'الخروج من المجموعة',
       onConfirm: async () => {
         leaving = true;
@@ -398,7 +439,7 @@ export function mountGroup(root, ctx, code) {
   function confirmDeleteExpense(exp) {
     confirmSheet({
       title: `حذف «${esc(exp.title)}»؟`,
-      body: 'سيُعاد حساب الأرصدة وتقفيل الحساب تلقائياً. لا يمكن التراجع عن هذا الإجراء.',
+      body: 'سيُعاد حساب الأرصدة وتصفية الحسابات تلقائياً. لا يمكن التراجع عن هذا الإجراء.',
       cta: 'حذف المصروف',
       onConfirm: async () => { await backend.deleteExpense(code, exp.id); state.expanded.delete(exp.id); toast('تم حذف المصروف', 'success'); },
     });
@@ -428,7 +469,7 @@ export function mountGroup(root, ctx, code) {
       <div class="settled-msg">
         <span class="settled-ic">${icon('checkCircle', 46)}</span>
         <h2>تمت التسوية ✓</h2>
-        <p>${left ? `متبقي ${num(left)} ${left === 1 ? 'تحويل' : 'تحويلات'} لتقفيل الحساب بالكامل` : 'تم تقفيل الحساب بالكامل 🎉 لا توجد مبالغ مستحقة في المجموعة'}</p>
+        <p>${left ? `متبقي ${num(left)} ${left === 1 ? 'تحويل' : 'تحويلات'} لتصفية الحسابات بالكامل` : 'تمت تصفية الحسابات بالكامل 🎉 لا توجد مبالغ مستحقة في المجموعة'}</p>
       </div>
       <button class="btn-primary" id="done"><span>تم</span></button>`, { label: 'تمت التسوية' });
     el.querySelector('#done').addEventListener('click', close);
@@ -440,12 +481,11 @@ export function mountGroup(root, ctx, code) {
     if (!t) return;
     const act = t.dataset.act;
     if (act === 'back' || act === 'home') return ctx.go('');
-    if (act === 'settings') return ctx.go('settings');
     if (act === 'options') return openOptions();
     if (act === 'invite') return openInvite(ctx, group());
     if (act === 'add') return openAddExpense(ctx, group());
     if (act === 'stats') return ctx.go('stats/' + code);
-    if (act === 'whatsapp') return shareWhatsApp();
+    if (act === 'share') return openShare();
 
     if (t.dataset.member) return openMembers(t.dataset.member);
     if (t.dataset.period) { state.period = t.dataset.period; animateList = true; renderPeriods(); renderDash(); renderTab(group()); return; }

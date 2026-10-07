@@ -106,7 +106,7 @@ service cloud.firestore {
             && d.category is string
             && d.splitMethod in ['equal', 'custom', 'percentage']
             && d.paidByUserId is string
-            && d.participants is list && d.participants.size() >= 2 && d.participants.size() <= 50;
+            && d.participants is list && d.participants.size() >= 1 && d.participants.size() <= 50;
         }
 
         allow read: if inGroup();

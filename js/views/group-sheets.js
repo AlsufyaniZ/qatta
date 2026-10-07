@@ -63,6 +63,47 @@ export function openCreateGroup(ctx) {
   });
 }
 
+// ── تعديل المجموعة (للمنشئ) ──
+export function openEditGroup(ctx, group) {
+  if (!group) return;
+  let emoji = group.emoji || GROUP_EMOJIS[0];
+  const { el, close } = openSheet(`
+    <div class="card-title"><h2>تعديل المجموعة</h2><p>غيّر اسم المجموعة أو رمزها — يظهر التغيير لجميع الأعضاء</p></div>
+    <form id="eg-form" novalidate>
+      <label class="field" for="eg-name">
+        <span class="field-label">اسم المجموعة</span>
+        <span class="field-box"><span class="emoji-preview" id="eg-emoji">${esc(emoji)}</span><input id="eg-name" maxlength="60" value="${esc(group.name)}" autocomplete="off"></span>
+      </label>
+      <div>
+        <span class="field-label">الرمز</span>
+        <div class="emoji-grid">${GROUP_EMOJIS.map(e => `<button type="button" class="emoji-btn ${e === emoji ? 'on' : ''}" data-emoji="${e}">${e}</button>`).join('')}</div>
+      </div>
+      <div class="form-error" id="eg-error" hidden></div>
+      <button class="btn-primary" type="submit"><span>حفظ التغييرات</span><i class="spinner"></i></button>
+    </form>`, { label: 'تعديل المجموعة' });
+  const $ = (s) => el.querySelector(s);
+  el.querySelectorAll('[data-emoji]').forEach(b => b.addEventListener('click', () => {
+    emoji = b.dataset.emoji; $('#eg-emoji').textContent = emoji;
+    el.querySelectorAll('[data-emoji]').forEach(x => x.classList.toggle('on', x === b));
+  }));
+  $('#eg-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const btn = ev.target.querySelector('.btn-primary');
+    const name = $('#eg-name').value.trim();
+    const err = $('#eg-error');
+    if (!name) { err.innerHTML = `${icon('alert', 15)}<span>يرجى إدخال اسم المجموعة</span>`; err.hidden = false; shake(ev.target); return; }
+    setLoading(btn, true);
+    try {
+      await ctx.backend.updateGroup(group.id, { name, emoji });
+      close(); toast('تم تحديث المجموعة', 'success');
+    } catch (e) {
+      console.warn(e);
+      err.innerHTML = `${icon('alert', 15)}<span>${esc(errorMessage(e))}</span>`; err.hidden = false;
+      setLoading(btn, false);
+    }
+  });
+}
+
 // ── الانضمام برمز ──
 export function openJoinGroup(ctx, prefill = '') {
   const { el, close } = openSheet(`

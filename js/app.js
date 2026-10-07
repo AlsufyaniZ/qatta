@@ -140,7 +140,7 @@ async function boot() {
     await splash;
     root.innerHTML = `
       <div class="screen center-msg">
-        <div class="logo-tile">ق</div>
+        <img class="logo-mark" src="assets/icons/logo.png" alt="قطة" width="96" height="96">
         <h2>تعذّر الاتصال بـ Firebase</h2>
         <p>تحقّق من اتصال الإنترنت ثم أعد المحاولة.</p>
         <button class="btn-primary" onclick="location.reload()"><span>إعادة المحاولة</span></button>

@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────
 // Home — كل المجموعات التي أنشأها المستخدم أو انضم إليها
 // ─────────────────────────────────────────────
-import { icon, esc, avatar, money, num, greeting, relTime } from '../ui.js';
+import { icon, esc, avatar, money, num, greeting, relTime, brandBar } from '../ui.js';
 import { T, myBalance, groupMembers, periodTotals, round2 } from '../models.js';
 import { openCreateGroup, openJoinGroup } from './group-sheets.js';
 
@@ -13,6 +13,7 @@ export function mountHome(root, ctx) {
 
   root.innerHTML = `
     <div class="screen home">
+      ${brandBar()}
       <header class="home-header">
         <div>
           <p class="muted sm">${greeting()}</p>
@@ -20,21 +21,23 @@ export function mountHome(root, ctx) {
         </div>
         <div class="head-actions">
           <button class="icon-btn" data-act="settings" aria-label="الإعدادات">${icon('settings', 22)}</button>
-          <button class="avatar-btn" data-act="settings" aria-label="الحساب">${avatar(state.profile?.name || '', state.profile?.avatarColor, 44)}</button>
+          <button class="avatar-btn" data-act="settings" aria-label="الحساب">${avatar(state.profile?.name || '', state.profile?.avatarColor, 44, state.profile?.initials)}</button>
         </div>
       </header>
 
       <section class="balance-card anim-up" id="balance"></section>
 
       <div class="sec-head-row mt">
-        <h2 class="sec-head">مجموعاتي</h2>
-        <button class="link-btn" data-act="join">${icon('link', 15)} انضمام برمز</button>
+        <div class="sec-title-row">
+          <h2 class="sec-head">مجموعاتي</h2>
+          <button class="add-btn" data-act="create" id="add-group" aria-label="مجموعة جديدة" title="مجموعة جديدة" hidden>${icon('plus', 18)}</button>
+        </div>
+        <button class="link-btn" data-act="join" id="join-link" hidden>${icon('link', 15)} انضمام برمز</button>
       </div>
       <section class="group-list" id="groups">
         ${[0, 1].map(() => '<div class="skeleton"></div>').join('')}
       </section>
 
-      <button class="fab" data-act="create">${icon('plus', 18)}<span>مجموعة جديدة</span></button>
     </div>`;
 
   const $ = (s) => root.querySelector(s);
@@ -75,7 +78,7 @@ export function mountHome(root, ctx) {
     if (!loaded) pill = '<span class="pill pill-muted">…</span>';
     else if (b.owedToMe > 0) pill = `<span class="pill pill-accent">لك ${money(b.owedToMe)}</span>`;
     else if (b.iOwe > 0) pill = `<span class="pill pill-danger">عليك ${money(b.iOwe)}</span>`;
-    else pill = `<span class="pill ${list.length ? 'pill-accent' : 'pill-muted'}">${list.length ? 'الحساب مقفل ✓' : 'لا مصاريف بعد'}</span>`;
+    else pill = `<span class="pill ${list.length ? 'pill-accent' : 'pill-muted'}">${list.length ? 'الحسابات مصفّاة ✓' : 'لا مصاريف بعد'}</span>`;
 
     return `
       <button class="group-card ${animate ? 'anim-up' : ''}" style="animation-delay:${i * 60}ms" data-group="${esc(g.id)}">
@@ -83,7 +86,7 @@ export function mountHome(root, ctx) {
         <span class="g-meta">
           <span class="g-title">${esc(g.name)}${g.createdBy === me.uid ? ' <em class="tag">المنشئ</em>' : ''}</span>
           <span class="g-sub">${num(members.length)} أعضاء · صرف آخر شهر ${money(month.total)}</span>
-          <span class="strip">${members.slice(0, 5).map(m => avatar(m.name, m.avatarColor, 22)).join('')}${members.length > 5 ? `<span class="avatar more" style="width:22px;height:22px">+${members.length - 5}</span>` : ''}</span>
+          <span class="strip">${members.slice(0, 5).map(m => avatar(m.name, m.avatarColor, 22, m.initials)).join('')}${members.length > 5 ? `<span class="avatar more" style="width:22px;height:22px">+${members.length - 5}</span>` : ''}</span>
         </span>
         <span class="g-side">${pill}<span class="chev-l">${icon('chevronLeft', 18)}</span></span>
       </button>`;
@@ -92,6 +95,9 @@ export function mountHome(root, ctx) {
   function renderGroups() {
     const el = $('#groups');
     if (!state.groupsLoaded) return;
+    // زر + وانضمام برمز بجانب العنوان عند وجود مجموعات؛ وإلا تظهر رسالة البداية بأزرارها
+    $('#add-group').hidden = !state.groups.length;
+    $('#join-link').hidden = !state.groups.length;
     if (!state.groups.length) {
       el.innerHTML = `
         <div class="empty">

@@ -62,11 +62,14 @@ export function icon(name, size = 20, cls = '') {
   return `<svg class="ic ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 }
 
+export const WA_LOGO = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.47 14.38c-.3-.15-1.75-.86-2.02-.96-.27-.1-.47-.15-.67.15-.2.3-.77.96-.94 1.16-.17.2-.35.22-.64.07-.3-.15-1.25-.46-2.38-1.47-.88-.79-1.47-1.76-1.65-2.06-.17-.3-.02-.46.13-.6.13-.14.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.03-.52-.07-.15-.67-1.6-.92-2.2-.24-.58-.49-.5-.67-.5h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.48s1.07 2.88 1.21 3.08c.15.2 2.1 3.2 5.08 4.49.71.3 1.26.49 1.7.63.71.22 1.36.19 1.87.12.57-.09 1.75-.72 2-1.41.25-.7.25-1.29.17-1.41-.07-.13-.27-.2-.57-.35M12.05 21.5h-.01a9.4 9.4 0 0 1-4.8-1.31l-.34-.2-3.56.93.95-3.47-.22-.36a9.4 9.4 0 0 1-1.44-5.02c0-5.2 4.23-9.43 9.44-9.43a9.4 9.4 0 0 1 9.43 9.44c0 5.2-4.24 9.43-9.45 9.43M20.08 3.9A11.27 11.27 0 0 0 12.05.57C5.8.57.7 5.66.7 11.92c0 2 .52 3.95 1.52 5.67L.6 23.43l5.98-1.57a11.3 11.3 0 0 0 5.46 1.39h.01c6.25 0 11.35-5.09 11.35-11.35 0-3.03-1.18-5.88-3.32-8.02"/></svg>`;
+
 export const GOOGLE_LOGO = `<svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>`;
 
 // ── AvatarView ──
-export function avatar(name, color = '#4F6AF0', size = 44) {
-  return `<span class="avatar" style="--c:${esc(color)};width:${size}px;height:${size}px;font-size:${Math.round(size * 0.33)}px">${esc(initials(name))}</span>`;
+export function avatar(name, color = '#4F6AF0', size = 44, custom = '') {
+  const text = (custom && String(custom).trim()) || initials(name);
+  return `<span class="avatar" style="--c:${esc(color)};width:${size}px;height:${size}px;font-size:${Math.round(size * 0.33)}px">${esc(text)}</span>`;
 }
 
 // ── Formatting ──
@@ -211,6 +214,9 @@ export function phoneField({ id = 'phone', label = 'رقم الجوال', cc = '
 export function toggle(id, on, label) {
   return `<button type="button" role="switch" aria-checked="${on}" aria-label="${esc(label)}" class="switch ${on ? 'on' : ''}" id="${id}"><span></span></button>`;
 }
+
+/** شريط الشعار أعلى الصفحات — صغير وهادئ */
+export const brandBar = () => `<div class="brandbar"><img src="assets/icons/logo.png" alt="قطة" width="26" height="26"></div>`;
 
 /** ورقة سفلية (Bottom sheet) عامة */
 export function openSheet(innerHtml, { onClose, label = '' } = {}) {

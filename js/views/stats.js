@@ -2,7 +2,7 @@
 // Stats — توزيع المصاريف حسب الفئة (Pie/Donut) بالمبلغ والنسبة
 // المدى: شهر · ٣ · ٦ · ٩ أشهر · سنة
 // ─────────────────────────────────────────────
-import { icon, esc, money, num, isDark } from '../ui.js';
+import { icon, esc, money, num, isDark, brandBar } from '../ui.js';
 import { STATS_PERIODS, CATEGORY_COLORS, categoryBreakdown } from '../models.js';
 
 const pctFmt = new Intl.NumberFormat('ar-SA', { style: 'percent', maximumFractionDigits: 1 });
@@ -25,10 +25,11 @@ export function mountStats(root, ctx, code) {
   function shell(g) {
     root.innerHTML = `
       <div class="screen page stats-page">
+        ${brandBar()}
         <header class="page-head wide">
           <button class="icon-btn" data-act="back" aria-label="رجوع">${icon('chevronRight', 22)}</button>
           <div class="g-head"><span class="g-emoji sm">${esc(g.emoji || '👥')}</span><h1>الإحصائيات</h1></div>
-          <div class="head-actions"><button class="icon-btn" data-act="settings" aria-label="الإعدادات">${icon('settings', 21)}</button></div>
+          <span class="icon-btn-spacer"></span>
         </header>
         <p class="muted sm center">${esc(g.name)} · توزيع المصاريف حسب الفئة</p>
         <div class="period-bar" id="periods" role="tablist" aria-label="المدى الزمني"></div>

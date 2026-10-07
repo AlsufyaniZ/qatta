@@ -3,25 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#3D5AF1">
+  <meta name="theme-color" content="#0F1117">
   <meta name="description" content="قطة — شارك المصاريف مع أصدقائك وعائلتك بلا تعقيد">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="قطة">
   <title>قطة — مدير المصاريف المشتركة</title>
   <script>
-    // تطبيق المظهر قبل الرسم لتجنّب الوميض: الإعداد المحفوظ أولاً، وإلا مظهر الجهاز
+    // تطبيق المظهر قبل الرسم لتجنّب الوميض: الإعداد المحفوظ أولاً، وإلا الوضع الداكن
     (function () {
-      var dark = false;
+      var dark = true;
       try {
         var saved = localStorage.getItem('qatta-theme');
-        dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+        dark = saved ? saved === 'dark' : true; // الوضع الداكن هو الافتراضي
       } catch (e) {}
       document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-      if (dark) document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0F1117');
+      document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#0F1117' : '#3D5AF1');
     })();
   </script>
-  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="assets/icon.svg">
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" href="assets/icons/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="icon" href="assets/icons/favicon-16.png" type="image/png" sizes="16x16">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+  <link rel="preload" href="assets/icons/icon-512.png" as="image">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -35,8 +38,8 @@
       <div class="splash-circle c1"></div>
       <div class="splash-circle c2"></div>
       <div class="splash-content">
-        <div class="splash-icon">ق</div>
-        <h1>قطة</h1>
+        <img class="splash-icon" src="assets/icons/icon-512.png" alt="" width="128" height="128">
+        <h1 class="sr-only">قطة</h1>
         <p>شارك المصاريف، بلا تعقيد</p>
       </div>
     </div>

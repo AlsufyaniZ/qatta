@@ -17,9 +17,9 @@ export const category = (id) => CATEGORIES.find(c => c.id === id) || CATEGORIES[
 
 /** المصطلحات الموحّدة في الواجهة */
 export const T = {
-  owedToMe: 'الفلوس اللي لي',
-  iOwe: 'الفلوس اللي علي',
-  closing: 'تقفيل الحساب',
+  owedToMe: 'لي',
+  iOwe: 'علي',
+  closing: 'تصفية الحسابات',
 };
 
 /** ألوان الفئات (ثابتة لكل فئة — اللون يتبع الفئة لا ترتيبها) */
@@ -152,7 +152,7 @@ export function groupNets(expenses = [], settlements = [], group = null) {
     if (!nets.has(id)) {
       const i = info[id] || p || {};
       nets.set(id, {
-        id, net: 0, name: i.name || 'عضو', avatarColor: i.avatarColor || '#A9AECB', phone: i.phone || '',
+        id, net: 0, name: i.name || 'عضو', avatarColor: i.avatarColor || '#A9AECB', phone: i.phone || '', initials: i.initials || '',
         isGuest: !!(p && p.isGuest), isMember: !!group?.members?.includes(id),
       });
     }
@@ -236,6 +236,7 @@ export const memberInfoFrom = (profile) => ({
   name: profile.name || '',
   phone: profile.phone || '',
   avatarColor: profile.avatarColor || AVATAR_PALETTE[0],
+  initials: profile.initials || '',
 });
 
 /** قائمة أعضاء المجموعة كمصفوفة مرتبة (المنشئ أولاً) */

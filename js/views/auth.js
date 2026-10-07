@@ -24,8 +24,8 @@ export function mountAuth(root, ctx) {
       <div class="screen auth-screen">
         <div class="blob blob-a"></div><div class="blob blob-b"></div>
         <header class="auth-hero ${first ? 'anim-pop' : ''}">
-          <div class="logo-tile">ق</div>
-          <h1 class="brand">قطة</h1>
+          <img class="logo-mark" src="assets/icons/logo.png" alt="قطة" width="120" height="120">
+          <h1 class="sr-only">قطة</h1>
           <p class="muted">أدِر مصاريفك المشتركة بسهولة</p>
         </header>
 

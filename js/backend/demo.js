@@ -106,7 +106,7 @@ export function createDemoBackend() {
     async getProfile() { return db.profile ? { ...db.profile } : null; },
     async saveProfile(uid, data, codes = []) {
       db.profile = { ...db.profile, ...data };
-      for (const c of codes) if (db.groups[c]) db.groups[c].memberInfo[uid] = { name: data.name, phone: data.phone || '', avatarColor: data.avatarColor };
+      for (const c of codes) if (db.groups[c]) db.groups[c].memberInfo[uid] = { name: data.name, phone: data.phone || '', avatarColor: data.avatarColor, initials: data.initials || '' };
       persist(); emitGroups();
     },
 
@@ -123,6 +123,11 @@ export function createDemoBackend() {
       if (!g) fail('not-found');
       if (!g.members.includes(uid)) g.members.push(uid);
       g.memberInfo[uid] = info;
+      persist(); emitGroups();
+    },
+    async updateGroup(code, { name, emoji }) {
+      const g = db.groups[code]; if (!g) return;
+      g.name = name; g.emoji = emoji; g.updatedAt = new Date().toISOString();
       persist(); emitGroups();
     },
     async deleteGroup(code) { delete db.groups[code]; persist(); emitGroups(); },

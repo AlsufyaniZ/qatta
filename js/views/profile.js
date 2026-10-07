@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────
 // Profile — إكمال الملف الشخصي (أول دخول بـ Google) أو تعديله من الإعدادات
 // ─────────────────────────────────────────────
-import { icon, esc, field, phoneField, setLoading, shake, toast, errorMessage, avatar } from '../ui.js';
-import { COUNTRY_CODES, randomAvatarColor, toE164, AVATAR_PALETTE } from '../models.js';
+import { icon, esc, field, phoneField, setLoading, shake, toast, errorMessage, avatar, brandBar } from '../ui.js';
+import { COUNTRY_CODES, randomAvatarColor, toE164, AVATAR_PALETTE, initials as autoInitials } from '../models.js';
 
 export function mountProfile(root, ctx, { edit = false } = {}) {
   const signal = ctx.signal;
@@ -19,6 +19,7 @@ export function mountProfile(root, ctx, { edit = false } = {}) {
 
   root.innerHTML = `
     <div class="screen page">
+      ${brandBar()}
       <header class="page-head">
         ${edit ? `<button class="icon-btn" id="back" aria-label="رجوع">${icon('chevronRight', 22)}</button>` : '<span></span>'}
         <h1>${edit ? 'الملف الشخصي' : 'خطوة أخيرة'}</h1>
@@ -26,7 +27,7 @@ export function mountProfile(root, ctx, { edit = false } = {}) {
       </header>
 
       <div class="profile-hero anim-pop">
-        <div id="avatar-preview">${avatar(existing.name || user.displayName || '؟', color, 88)}</div>
+        <div id="avatar-preview">${avatar(existing.name || user.displayName || '؟', color, 88, existing.initials)}</div>
         <div class="color-row" role="radiogroup" aria-label="لون الصورة الرمزية">
           ${AVATAR_PALETTE.map(c => `<button type="button" class="color-dot ${c === color ? 'on' : ''}" data-color="${c}" style="--c:${c}" aria-label="لون"></button>`).join('')}
         </div>
@@ -36,6 +37,7 @@ export function mountProfile(root, ctx, { edit = false } = {}) {
         ${!edit ? `<div class="card-title"><h2>أكمل ملفك الشخصي</h2><p>يظهر اسمك ورقمك لأعضاء مجموعاتك</p></div>` : ''}
         <form id="profile-form" novalidate>
           ${field({ id: 'name', label: 'الاسم', ic: 'user', placeholder: 'مثال: محمد العلي', value: existing.name || user.displayName || '', autocomplete: 'name' })}
+          ${field({ id: 'initials', label: 'رمز الصورة الرمزية (حرفان — اختياري)', ic: 'edit', placeholder: autoInitials(existing.name || user.displayName || ''), value: existing.initials || '' })}
 
           ${isPhoneAccount
             ? `<div class="readonly-row">${icon('phone', 17)}<div><span class="field-label">رقم الجوال (للدخول)</span><b dir="ltr">${esc(existing.phone)}</b></div></div>`
@@ -53,8 +55,18 @@ export function mountProfile(root, ctx, { edit = false } = {}) {
 
   const $ = (s) => root.querySelector(s);
   const nameInput = $('#name');
-  const refreshAvatar = () => { $('#avatar-preview').innerHTML = avatar(nameInput.value || '؟', color, 88); };
+  const iniInput = $('#initials');
+  // حد أقصى حرفان (يدعم الحروف العربية والإيموجي)
+  const twoChars = (s) => {
+    const seg = typeof Intl.Segmenter === 'function' ? [...new Intl.Segmenter('ar', { granularity: 'grapheme' }).segment(s)].map(x => x.segment) : [...s];
+    return seg.filter(c => c.trim()).slice(0, 2).join('');
+  };
+  const refreshAvatar = () => {
+    iniInput.placeholder = autoInitials(nameInput.value || '');
+    $('#avatar-preview').innerHTML = avatar(nameInput.value || '؟', color, 88, iniInput.value);
+  };
   nameInput.addEventListener('input', refreshAvatar, { signal });
+  iniInput.addEventListener('input', () => { const v = twoChars(iniInput.value); if (v !== iniInput.value) iniInput.value = v; refreshAvatar(); }, { signal });
   root.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => {
     color = b.dataset.color;
     root.querySelectorAll('[data-color]').forEach(x => x.classList.toggle('on', x === b));
@@ -81,7 +93,7 @@ export function mountProfile(root, ctx, { edit = false } = {}) {
       if (email && !/^\S+@\S+\.\S+$/.test(email)) return showError('البريد الإلكتروني غير صحيح');
     }
 
-    const profile = { name, phone, email, avatarColor: color };
+    const profile = { name, phone, email, avatarColor: color, initials: twoChars(iniInput.value.trim()) };
     setLoading(btn, true);
     try {
       await ctx.backend.saveProfile(user.uid, profile, ctx.state.groups.map(g => g.id));

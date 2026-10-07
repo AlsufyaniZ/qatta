@@ -131,7 +131,7 @@ export async function createFirebaseBackend(config) {
     async saveProfile(uid, data, groupCodes = []) {
       await fs.setDoc(fs.doc(db, 'users', uid), { ...data, updatedAt: fs.serverTimestamp() }, { merge: true });
       // تحديث الاسم/الرقم/اللون في كل مجموعة ينتمي لها المستخدم
-      const info = { name: data.name, phone: data.phone || '', avatarColor: data.avatarColor };
+      const info = { name: data.name, phone: data.phone || '', avatarColor: data.avatarColor, initials: data.initials || '' };
       await Promise.all(groupCodes.map(code =>
         fs.updateDoc(groupRef(code), { [`memberInfo.${uid}`]: info, updatedAt: fs.serverTimestamp() }).catch(() => {})));
     },
@@ -154,6 +154,11 @@ export async function createFirebaseBackend(config) {
         createdAt: fs.serverTimestamp(),
         updatedAt: fs.serverTimestamp(),
       });
+    },
+
+    /** تعديل اسم/رمز المجموعة (للمنشئ) */
+    async updateGroup(code, { name, emoji }) {
+      await fs.updateDoc(groupRef(code), { name, emoji, updatedAt: fs.serverTimestamp() });
     },
 
     /** الانضمام بالرمز: يضيف المستخدم نفسه فقط (تسمح به القواعد لغير الأعضاء) */
@@ -206,7 +211,7 @@ export async function createFirebaseBackend(config) {
       await fs.deleteDoc(fs.doc(db, 'groups', code, 'expenses', expenseId));
     },
 
-    // ───────────── Settlements (تقفيل الحساب) ─────────────
+    // ───────────── Settlements (تصفية الحسابات) ─────────────
     subscribeSettlements(code, onData, onError) {
       return fs.onSnapshot(fs.collection(db, 'groups', code, 'settlements'), (snap) => onData(snap.docs.map(fromDoc)), onError);
     },

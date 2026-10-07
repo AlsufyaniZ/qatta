@@ -22,7 +22,7 @@ export function openAddExpense(ctx, group, existing = null) {
     note: '',
     payer: me.uid,
     // كل الأعضاء مختارون افتراضياً
-    people: members.map(m => ({ id: m.uid, name: m.name, phone: m.phone, avatarColor: m.avatarColor, selected: true, isGuest: false, shareAmount: 0 })),
+    people: members.map(m => ({ id: m.uid, name: m.name, phone: m.phone, avatarColor: m.avatarColor, initials: m.initials || '', selected: true, isGuest: false, shareAmount: 0 })),
   };
 
   // ── وضع التعديل: تعبئة القيم الحالية ──
@@ -50,7 +50,7 @@ export function openAddExpense(ctx, group, existing = null) {
   const remaining = () => round2(total() - customTotal());
   const balanced = () => Math.abs(remaining()) < 0.01;
   const payerIncluded = () => selected().some(p => p.id === form.payer);
-  const isValid = () => (form.title.trim() || form.category) && total() > 0 && selected().length >= 2 && (form.split === 'equal' || balanced());
+  const isValid = () => (form.title.trim() || form.category) && total() > 0 && selected().length >= 1 && (form.split === 'equal' || balanced());
 
   function recalcEqual() {
     // الدافع أولاً حتى يتحمّل فرق التقريب
@@ -162,7 +162,7 @@ export function openAddExpense(ctx, group, existing = null) {
   function renderPayers() {
     $('#payers').innerHTML = form.people.filter(p => !p.isGuest).map(p => `
       <button class="payer-chip ${form.payer === p.id ? 'on' : ''}" data-payer="${esc(p.id)}">
-        ${avatar(p.name, p.avatarColor, 26)}<span>${esc(p.id === me.uid ? 'أنا' : p.name.split(' ')[0])}</span>
+        ${avatar(p.name, p.avatarColor, 26, p.initials)}<span>${esc(p.id === me.uid ? 'أنا' : p.name.split(' ')[0])}</span>
       </button>`).join('');
   }
 
@@ -177,7 +177,7 @@ export function openAddExpense(ctx, group, existing = null) {
       return `
       <div class="p-row form-row ${on ? '' : 'off'}" data-pid="${esc(p.id)}">
         <button class="check ${on ? 'on' : ''}" data-check="${esc(p.id)}" role="checkbox" aria-checked="${on}" aria-label="${esc(p.name)}">${icon('check', 14)}</button>
-        ${avatar(p.name, p.avatarColor, 36)}
+        ${avatar(p.name, p.avatarColor, 36, p.initials)}
         <div class="p-info">
           <span class="p-name">${esc(p.name)}${p.id === me.uid ? ' <em class="tag">أنت</em>' : ''}${p.id === form.payer ? ' <em class="tag tag-accent">الدافع</em>' : ''}${p.isGuest ? ' <em class="tag tag-muted">ضيف</em>' : ''}${p.isFormer ? ' <em class="tag tag-muted">عضو سابق</em>' : ''}</span>
           ${p.phone ? `<span class="p-phone" dir="ltr">${esc(p.phone)}</span>` : ''}
@@ -201,8 +201,10 @@ export function openAddExpense(ctx, group, existing = null) {
   function renderValidation() {
     const v = $('#validation');
     const msgs = [];
-    if (selected().length < 2) msgs.push(`<div class="validate warn">${icon('alert', 16)}<span>اختر مشاركَين على الأقل</span></div>`);
-    if (!payerIncluded()) msgs.push(`<div class="validate info">${icon('info', 16)}<span>الدافع ليس ضمن المشاركين — سيُستحق له المبلغ كاملاً</span></div>`);
+    if (selected().length < 1) msgs.push(`<div class="validate warn">${icon('alert', 16)}<span>اختر مشاركاً واحداً على الأقل</span></div>`);
+    else if (selected().length === 1 && selected()[0].id === form.payer) msgs.push(`<div class="validate info">${icon('info', 16)}<span>الفاتورة كاملة على ${selected()[0].id === me.uid ? 'نفسك' : esc(selected()[0].name.split(' ')[0])} — لن تُحسب ديون لأحد</span></div>`);
+    else if (selected().length === 1) msgs.push(`<div class="validate info">${icon('info', 16)}<span>${selected()[0].id === me.uid ? 'أنت تتحمّل' : esc(selected()[0].name.split(' ')[0]) + ' يتحمّل'} الفاتورة كاملة للدافع</span></div>`);
+    if (!payerIncluded() && selected().length > 1) msgs.push(`<div class="validate info">${icon('info', 16)}<span>الدافع ليس ضمن المشاركين — سيُستحق له المبلغ كاملاً</span></div>`);
     if (form.split === 'custom' && total() > 0) {
       msgs.push(balanced()
         ? `<div class="validate ok">${icon('checkCircle', 16)}<span>المبالغ متوازنة ✓</span></div>`
@@ -302,13 +304,13 @@ export function openAddExpense(ctx, group, existing = null) {
     if (form.split === 'equal') recalcEqual();
     const sel = selected();
     let participants = sel.map(p => ({
-      id: p.id, name: p.name, phone: p.phone || '', avatarColor: p.avatarColor,
+      id: p.id, name: p.name, phone: p.phone || '', avatarColor: p.avatarColor, initials: p.initials || '',
       shareAmount: round2(p.shareAmount), isGuest: !!p.isGuest,
     }));
     // إذا لم يكن الدافع مشاركاً نضيفه بحصة صفر حتى يظهر كدافع
     if (!participants.some(p => p.id === form.payer)) {
       const payer = form.people.find(p => p.id === form.payer);
-      participants = [{ id: payer.id, name: payer.name, phone: payer.phone || '', avatarColor: payer.avatarColor, shareAmount: 0, isGuest: false }, ...participants];
+      participants = [{ id: payer.id, name: payer.name, phone: payer.phone || '', avatarColor: payer.avatarColor, initials: payer.initials || '', shareAmount: 0, isGuest: false }, ...participants];
     }
     const expense = {
       title: form.title.trim() || category(form.category).name,

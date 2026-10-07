@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────
 // Settings — الملف الشخصي · الوضع الغامق · تسجيل الخروج
 // ─────────────────────────────────────────────
-import { icon, esc, avatar, toggle, isDark, setDark, toast } from '../ui.js';
+import { icon, esc, avatar, toggle, isDark, setDark, toast, brandBar } from '../ui.js';
 
 export function mountSettings(root, ctx) {
   const { state, backend } = ctx;
@@ -12,6 +12,7 @@ export function mountSettings(root, ctx) {
 
   root.innerHTML = `
     <div class="screen page">
+      ${brandBar()}
       <header class="page-head">
         <button class="icon-btn" data-act="back" aria-label="رجوع">${icon('chevronRight', 22)}</button>
         <h1>الإعدادات</h1>
@@ -19,7 +20,7 @@ export function mountSettings(root, ctx) {
       </header>
 
       <button class="profile-card anim-up" data-act="profile">
-        ${avatar(p.name, p.avatarColor, 56)}
+        ${avatar(p.name, p.avatarColor, 56, p.initials)}
         <span class="pc-meta">
           <strong>${esc(p.name || '')}</strong>
           <span dir="ltr">${esc(p.phone || u.email || '')}</span>
@@ -55,7 +56,7 @@ export function mountSettings(root, ctx) {
         </button>
       </div>
 
-      <p class="version">قطة · نسخة الويب 2.0</p>
+      <div class="about"><img class="logo-mark sm" src="assets/icons/logo.png" alt="قطة" width="56" height="56"><p class="version">نسخة الويب 4.0</p></div>
     </div>`;
 
   root.addEventListener('click', async (ev) => {
