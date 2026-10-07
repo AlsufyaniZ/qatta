@@ -1,132 +1,147 @@
 // ─────────────────────────────────────────────
-// Demo backend — نفس واجهة firebase.js لكن ببيانات محلية (localStorage)
-// يُستخدم تلقائياً عندما تكون إعدادات Firebase فارغة، أو عند فتح الرابط بـ ?demo
-// البيانات مأخوذة من MockData في تطبيق الجوال
+// Demo backend — نفس واجهة firebase.js ببيانات محلية (localStorage)
+// يعمل عند ترك إعدادات Firebase فارغة أو عند فتح الرابط بـ ?demo
 // ─────────────────────────────────────────────
 
-const KEY = 'qatta-demo-v1';
+const KEY = 'qatta-demo-v2';
 const delay = (ms) => new Promise(r => setTimeout(r, ms));
 const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString();
 
-const DEMO_USER = {
-  uid: 'user_001',
-  email: 'demo@qatta.app',
-  displayName: 'محمد العلي',
-  emailVerified: true,
-  isGoogle: false,
-};
+const ME = 'user_001';
+const DEMO_USER = { uid: ME, email: '', displayName: 'محمد العلي', method: 'phone' };
 
-const P = {
-  mohammed: { id: 'user_001', name: 'محمد العلي',   phone: '+966501112233', email: 'demo@qatta.app', avatarColor: '#4F6AF0' },
-  sara:     { id: 'user_002', name: 'سارة الأحمد',  phone: '+966509998877', email: '', avatarColor: '#E25C5C' },
-  khalid:   { id: 'user_003', name: 'خالد المطيري', phone: '+966507776655', email: '', avatarColor: '#4CAF82' },
-  noura:    { id: 'user_004', name: 'نورة السعد',   phone: '+966505554433', email: '', avatarColor: '#F0A84F' },
+const M = {
+  user_001: { name: 'محمد العلي',   phone: '+966501112233', avatarColor: '#4F6AF0' },
+  user_002: { name: 'سارة الأحمد',  phone: '+966509998877', avatarColor: '#E25C5C' },
+  user_003: { name: 'خالد المطيري', phone: '+966507776655', avatarColor: '#4CAF82' },
+  user_004: { name: 'نورة السعد',   phone: '+966505554433', avatarColor: '#F0A84F' },
 };
-const part = (p, shareAmount, isPaid) => ({ ...p, shareAmount, isPaid });
+const P = (uid, shareAmount, isPaid) => ({ id: uid, ...M[uid], shareAmount, isPaid });
+const exp = (id, title, totalAmount, category, paidBy, participants, days, note = null) => ({
+  id, title, totalAmount, currency: 'SAR', category, paidByUserId: paidBy, createdBy: paidBy,
+  participants, participantIds: participants.map(p => p.id), splitMethod: 'equal', note,
+  createdAt: daysAgo(days), updatedAt: daysAgo(days),
+});
 
 function seed() {
   return {
     session: false,
-    profile: { name: P.mohammed.name, phone: P.mohammed.phone, email: DEMO_USER.email, avatarColor: P.mohammed.avatarColor },
-    expenses: [
-      {
-        id: 'exp_001', title: 'عشاء في مطعم البيك', totalAmount: 320, currency: 'SAR', category: 'food',
-        paidByUserId: 'user_001', ownerId: 'user_001', splitMethod: 'equal', note: 'احتفال عيد ميلاد خالد',
-        participants: [part(P.mohammed, 80, true), part(P.sara, 80, true), part(P.khalid, 80, false), part(P.noura, 80, false)],
-        memberEmails: [], createdAt: daysAgo(2), updatedAt: daysAgo(2),
+    profile: { name: M.user_001.name, phone: M.user_001.phone, email: '', avatarColor: M.user_001.avatarColor },
+    groups: {
+      HOME2026: {
+        name: 'قطة المنزل', emoji: '🏠', createdBy: ME, members: [ME, 'user_002'],
+        memberInfo: { [ME]: M.user_001, user_002: M.user_002 }, createdAt: daysAgo(120), updatedAt: daysAgo(1),
+        expenses: [
+          exp('e1', 'كارفور - تسوق شهري', 850, 'shopping', 'user_002', [P(ME, 425, false), P('user_002', 425, true)], 5),
+          exp('e2', 'فاتورة الكهرباء', 460, 'housing', ME, [P(ME, 230, true), P('user_002', 230, false)], 12),
+          exp('e3', 'إيجار الشهر الماضي', 3000, 'housing', ME, [P(ME, 1500, true), P('user_002', 1500, true)], 40),
+          exp('e4', 'إنترنت', 345, 'housing', 'user_002', [P(ME, 172.5, true), P('user_002', 172.5, true)], 95),
+        ],
       },
-      {
-        id: 'exp_002', title: 'كارفور - تسوق شهري', totalAmount: 850, currency: 'SAR', category: 'shopping',
-        paidByUserId: 'user_002', ownerId: 'user_002', splitMethod: 'equal', note: null,
-        participants: [part(P.mohammed, 425, false), part(P.sara, 425, true)],
-        memberEmails: [DEMO_USER.email], createdAt: daysAgo(5), updatedAt: daysAgo(5),
+      ISTRAHA7: {
+        name: 'قطة الاستراحة', emoji: '🏕️', createdBy: 'user_003', members: ['user_003', ME, 'user_004'],
+        memberInfo: { user_003: M.user_003, [ME]: M.user_001, user_004: M.user_004 }, createdAt: daysAgo(60), updatedAt: daysAgo(2),
+        expenses: [
+          exp('e5', 'عشاء في مطعم البيك', 240, 'food', ME, [P(ME, 80, true), P('user_003', 80, false), P('user_004', 80, false)], 2, 'احتفال عيد ميلاد خالد'),
+          exp('e6', 'حطب وفحم', 150, 'other', 'user_003', [P('user_003', 50, true), P(ME, 50, false), P('user_004', 50, true)], 9),
+        ],
       },
-      {
-        id: 'exp_003', title: 'رحلة الدمام', totalAmount: 1200, currency: 'SAR', category: 'travel',
-        paidByUserId: 'user_001', ownerId: 'user_001', splitMethod: 'equal', note: null,
-        participants: [part(P.mohammed, 400, true), part(P.khalid, 400, true), part(P.noura, 400, false)],
-        memberEmails: [], createdAt: daysAgo(10), updatedAt: daysAgo(10),
+      TRIP9DMM: {
+        name: 'قطة السفر', emoji: '✈️', createdBy: ME, members: [ME, 'user_003', 'user_004'],
+        memberInfo: { [ME]: M.user_001, user_003: M.user_003, user_004: M.user_004 }, createdAt: daysAgo(200), updatedAt: daysAgo(150),
+        expenses: [
+          exp('e7', 'رحلة الدمام - الفندق', 1200, 'travel', ME, [P(ME, 400, true), P('user_003', 400, true), P('user_004', 400, false)], 150),
+        ],
       },
-    ],
+    },
   };
 }
 
 export function createDemoBackend() {
   let memoryFallback = null;
-  const load = () => {
-    try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { return memoryFallback; }
-  };
-  const persist = () => {
-    try { localStorage.setItem(KEY, JSON.stringify(db)); } catch { memoryFallback = db; }
-  };
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { return memoryFallback; } };
+  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch { memoryFallback = db; } };
 
   let db = load() || seed();
   persist();
 
-  const authListeners = new Set();
-  const expenseListeners = new Set();
-  const revive = (e) => ({ ...e, participants: e.participants.map(p => ({ ...p })), createdAt: new Date(e.createdAt), updatedAt: new Date(e.updatedAt) });
-  const emitExpenses = () => { const list = db.expenses.map(revive); expenseListeners.forEach(cb => cb(list)); };
-  const emitAuth = () => { const u = db.session ? { ...DEMO_USER } : null; authListeners.forEach(cb => cb(u)); };
+  const authL = new Set();
+  const groupL = new Set();
+  const expL = new Map(); // code → Set(cb)
+
+  const reviveG = (code, g) => ({ id: code, name: g.name, emoji: g.emoji, createdBy: g.createdBy, members: [...g.members],
+    memberInfo: JSON.parse(JSON.stringify(g.memberInfo)), createdAt: new Date(g.createdAt), updatedAt: new Date(g.updatedAt) });
+  const reviveE = (e) => ({ ...e, participants: e.participants.map(p => ({ ...p })), createdAt: new Date(e.createdAt), updatedAt: new Date(e.updatedAt) });
+  const myGroups = () => Object.entries(db.groups).filter(([, g]) => g.members.includes(ME)).map(([c, g]) => reviveG(c, g));
+
+  const emitAuth = () => { const u = db.session ? { ...DEMO_USER } : null; authL.forEach(cb => cb(u)); };
+  const emitGroups = () => { const l = myGroups(); groupL.forEach(cb => cb(l)); };
+  const emitExp = (code) => { const l = (db.groups[code]?.expenses || []).map(reviveE); expL.get(code)?.forEach(cb => cb(l)); };
   const fail = (code) => { const e = new Error(code); e.code = code; throw e; };
+  const login = () => { db.session = true; persist(); emitAuth(); };
 
   return {
     mode: 'demo',
 
-    onAuth(cb) {
-      authListeners.add(cb);
-      setTimeout(() => cb(db.session ? { ...DEMO_USER } : null), 0);
-      return () => authListeners.delete(cb);
-    },
-    async signInEmail(email, password) {
-      await delay(700);
-      if (!password || password.length < 6) fail('auth/invalid-credential');
-      db.session = true; persist(); emitAuth();
-    },
-    async signUpEmail(name, email, password) {
-      await delay(700);
-      if (password.length < 6) fail('auth/weak-password');
-      db.session = true; db.profile.name = name || db.profile.name; persist(); emitAuth();
-    },
-    async signInGoogle() {
-      await delay(700);
-      db.session = true; persist(); emitAuth();
-    },
-    async resetPassword() { await delay(500); },
-    async resendVerification() { await delay(300); },
-    async reloadUser() { return db.session ? { ...DEMO_USER } : null; },
+    onAuth(cb) { authL.add(cb); setTimeout(() => cb(db.session ? { ...DEMO_USER } : null), 0); return () => authL.delete(cb); },
+    async signInPhone(e164, pw) { await delay(600); if (!pw || pw.length < 6) fail('phone/invalid-credential'); login(); },
+    async signUpPhone(e164, pw, profile) { await delay(600); db.profile = { ...db.profile, ...profile, phone: e164 }; login(); },
+    async signInEmail(email, pw) { await delay(600); if (!pw || pw.length < 6) fail('auth/invalid-credential'); login(); },
+    async signUpEmail(email, pw, profile) { await delay(600); db.profile = { ...db.profile, ...profile, email }; login(); },
+    async signInGoogle() { await delay(600); login(); },
+    async resetPassword() { await delay(400); },
     async signOut() { db.session = false; persist(); emitAuth(); },
 
     async getProfile() { return db.profile ? { ...db.profile } : null; },
-    async saveProfile(uid, data) { db.profile = { ...db.profile, ...data }; persist(); },
+    async saveProfile(uid, data, codes = []) {
+      db.profile = { ...db.profile, ...data };
+      for (const c of codes) if (db.groups[c]) db.groups[c].memberInfo[uid] = { name: data.name, phone: data.phone || '', avatarColor: data.avatarColor };
+      persist(); emitGroups();
+    },
 
-    subscribeExpenses(user, onData) {
-      expenseListeners.add(onData);
-      setTimeout(() => onData(db.expenses.map(revive)), 250);
-      return () => expenseListeners.delete(onData);
-    },
-    async addExpense(expense) {
-      const id = 'exp_' + Math.random().toString(36).slice(2, 10);
+    subscribeGroups(uid, onData) { groupL.add(onData); setTimeout(() => onData(myGroups()), 200); return () => groupL.delete(onData); },
+    async createGroup(code, { name, emoji }, uid, info) {
+      await delay(300);
       const now = new Date().toISOString();
-      db.expenses.push({ ...expense, id, createdAt: (expense.createdAt || new Date()).toISOString(), updatedAt: now });
-      persist(); emitExpenses();
-      return id;
+      db.groups[code] = { name, emoji, createdBy: uid, members: [uid], memberInfo: { [uid]: info }, createdAt: now, updatedAt: now, expenses: [] };
+      persist(); emitGroups();
     },
-    async updateParticipants(expenseId, participants) {
-      const e = db.expenses.find(x => x.id === expenseId);
+    async joinGroup(code, uid, info) {
+      await delay(300);
+      const g = db.groups[code];
+      if (!g) fail('not-found');
+      if (!g.members.includes(uid)) g.members.push(uid);
+      g.memberInfo[uid] = info;
+      persist(); emitGroups();
+    },
+    async deleteGroup(code) { delete db.groups[code]; persist(); emitGroups(); },
+
+    subscribeExpenses(code, onData) {
+      if (!expL.has(code)) expL.set(code, new Set());
+      expL.get(code).add(onData);
+      setTimeout(() => onData((db.groups[code]?.expenses || []).map(reviveE)), 150);
+      return () => expL.get(code)?.delete(onData);
+    },
+    async addExpense(code, e) {
+      const now = new Date().toISOString();
+      db.groups[code].expenses.push({ ...e, id: 'e_' + Math.random().toString(36).slice(2, 9), createdAt: (e.createdAt || new Date()).toISOString(), updatedAt: now });
+      db.groups[code].updatedAt = now;
+      persist(); emitExp(code); emitGroups();
+    },
+    async updateParticipants(code, id, participants) {
+      const e = db.groups[code]?.expenses.find(x => x.id === id);
       if (!e) return;
       e.participants = participants; e.updatedAt = new Date().toISOString();
-      persist(); emitExpenses();
+      persist(); emitExp(code);
     },
-    async deleteExpense(expenseId) {
-      db.expenses = db.expenses.filter(x => x.id !== expenseId);
-      persist(); emitExpenses();
+    async deleteExpense(code, id) {
+      db.groups[code].expenses = db.groups[code].expenses.filter(x => x.id !== id);
+      persist(); emitExp(code);
     },
 
-    /** خاص بالوضع التجريبي: يعيد البيانات الافتراضية */
     async resetDemo() {
-      const session = db.session;
-      db = seed(); db.session = session; persist(); emitExpenses();
+      const s = db.session; db = seed(); db.session = s; persist();
+      emitGroups(); for (const c of expL.keys()) emitExp(c);
     },
   };
 }

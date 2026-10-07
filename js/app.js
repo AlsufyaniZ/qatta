@@ -1,74 +1,124 @@
 // ─────────────────────────────────────────────
-// Qatta (قطة) — App entry + root router
-// مكافئ QattaApp.swift / ContentView
+// Qatta (قطة) — App entry + router
+// المسارات: #/ (المجموعات) · #/group/CODE · #/settings · #/profile
 // ─────────────────────────────────────────────
 import { firebaseConfig } from './config.js';
 import { createDemoBackend } from './backend/demo.js';
-import { toast } from './ui.js';
+import { toast, errorMessage } from './ui.js';
+import { memberInfoFrom } from './models.js';
 import { mountAuth } from './views/auth.js';
 import { mountProfile } from './views/profile.js';
 import { mountHome } from './views/home.js';
+import { mountGroup } from './views/group.js';
+import { mountSettings } from './views/settings.js';
 
 const root = document.getElementById('app');
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const JOIN_KEY = 'qatta-pending-join';
 
 const state = {
-  user: null,       // { uid, email, displayName, emailVerified, isGoogle }
-  profile: null,    // users/{uid}
-  expenses: [],
-  loaded: false,
-  filter: 'all',
+  user: null,              // { uid, email, displayName, method }
+  profile: null,           // users/{uid}
+  groups: [],              // المجموعات التي أنا عضو فيها
+  groupsLoaded: false,
+  expenses: new Map(),     // code → [expense]
+  expLoaded: new Set(),    // codes loaded
   expanded: new Set(),
+  filter: 'all',
+  period: '1m',
 };
 
-let current = null;          // الشاشة المعروضة حالياً
-let unsubExpenses = null;
+let current = null;              // { update?, destroy? }
+let controller = null;           // AbortController للشاشة الحالية
+let unsubGroups = null;
+const unsubExp = new Map();      // code → unsubscribe
 
 const ctx = {
   state,
   backend: null,
-  authBusy: null,            // وعد عملية دخول/تسجيل جارية
-  goHome,
-  goProfile: () => show(mountProfile, { edit: true }),
-  refreshUser(u) {
-    state.user = u;
-    stopExpenses();
-    goHome();
+  authBusy: null,
+  get signal() { return controller?.signal; },
+  go(path) {
+    const target = '#/' + (path || '');
+    if (location.hash === target) route(); else location.hash = target;
   },
+  back() {
+    if (history.length > 1 && location.hash && location.hash !== '#/') history.back(); else ctx.go('');
+  },
+  setProfile(p) { state.profile = p; },
+  get pendingJoin() { try { return sessionStorage.getItem(JOIN_KEY); } catch { return null; } },
+  clearPendingJoin() { try { sessionStorage.removeItem(JOIN_KEY); } catch {} },
+  myInfo: () => memberInfoFrom(state.profile || {}),
 };
 
-function show(mount, opts) {
+function show(mount, ...args) {
   current?.destroy?.();
+  controller?.abort();
+  controller = new AbortController();
+  document.querySelectorAll('.overlay').forEach(o => o.remove());
+  document.body.classList.remove('no-scroll');
   root.innerHTML = '';
-  root.scrollTop = 0;
   window.scrollTo(0, 0);
-  current = mount(root, ctx, opts) || {};
+  current = mount(root, ctx, ...args) || {};
 }
 
-function stopExpenses() {
-  unsubExpenses?.();
-  unsubExpenses = null;
+// ── Data subscriptions ──
+function stopData() {
+  unsubGroups?.(); unsubGroups = null;
+  unsubExp.forEach(u => u()); unsubExp.clear();
+  state.groups = []; state.groupsLoaded = false;
+  state.expenses.clear(); state.expLoaded.clear(); state.expanded.clear();
 }
 
-function goHome() {
-  show(mountHome);
-  if (!unsubExpenses) {
-    state.loaded = false;
-    unsubExpenses = ctx.backend.subscribeExpenses(
-      state.user,
-      (list) => { state.expenses = list; state.loaded = true; current?.update?.(); },
-      (err) => { console.error(err); state.loaded = true; current?.update?.(); toast('تعذّر تحميل المصاريف — تحقّق من قواعد Firestore', 'error'); },
-    );
-  } else {
-    current.update?.();
-  }
+function startData() {
+  if (unsubGroups) return;
+  unsubGroups = ctx.backend.subscribeGroups(state.user.uid, (groups) => {
+    state.groups = groups;
+    state.groupsLoaded = true;
+    const codes = new Set(groups.map(g => g.id));
+    // أوقف الاشتراكات في المجموعات المحذوفة/المغادَرة
+    for (const [code, u] of unsubExp) if (!codes.has(code)) { u(); unsubExp.delete(code); state.expenses.delete(code); state.expLoaded.delete(code); }
+    // اشترك في مصاريف المجموعات الجديدة
+    for (const code of codes) {
+      if (unsubExp.has(code)) continue;
+      unsubExp.set(code, ctx.backend.subscribeExpenses(code,
+        (list) => { state.expenses.set(code, list); state.expLoaded.add(code); current?.update?.(); },
+        (e) => console.warn('[Qatta] expenses', code, e)));
+    }
+    current?.update?.();
+  }, (e) => {
+    console.error(e);
+    state.groupsLoaded = true;
+    current?.update?.();
+    toast('تعذّر تحميل المجموعات — تحقّق من قواعد Firestore', 'error');
+  });
 }
+
+// ── Router ──
+function route() {
+  if (!state.user) return;
+  if (!state.profile?.name) { show(mountProfile, { edit: false }); return; }
+  startData();
+  const [page, arg] = location.hash.replace(/^#\/?/, '').split('/');
+  if (page === 'group' && arg) show(mountGroup, decodeURIComponent(arg));
+  else if (page === 'settings') show(mountSettings);
+  else if (page === 'profile') show(mountProfile, { edit: true });
+  else show(mountHome);
+}
+window.addEventListener('hashchange', route);
 
 async function boot() {
+  // رابط دعوة: ?join=CODE → يُحفظ حتى بعد تسجيل الدخول
   const params = new URLSearchParams(location.search);
-  const configured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
-  const splash = sleep(1400);
+  const join = params.get('join');
+  if (join) {
+    try { sessionStorage.setItem(JOIN_KEY, join.toUpperCase().replace(/[^A-Z0-9]/g, '')); } catch {}
+    params.delete('join');
+    history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : '') + '#/');
+  }
 
+  const configured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
+  const splash = sleep(1200);
   try {
     if (configured && !params.has('demo')) {
       const { createFirebaseBackend } = await import('./backend/firebase.js');
@@ -83,40 +133,22 @@ async function boot() {
       <div class="screen center-msg">
         <div class="logo-tile">ق</div>
         <h2>تعذّر الاتصال بـ Firebase</h2>
-        <p>تحقّق من اتصال الإنترنت ومن صحة الإعدادات في <code>js/config.js</code>.</p>
+        <p>تحقّق من اتصال الإنترنت ثم أعد المحاولة.</p>
         <button class="btn-primary" onclick="location.reload()"><span>إعادة المحاولة</span></button>
       </div>`;
     return;
   }
-
   document.documentElement.dataset.mode = ctx.backend.mode;
 
   ctx.backend.onAuth(async (user) => {
     await splash;
-    // انتظر اكتمال عملية التسجيل (إنشاء ملف المستخدم) قبل التوجيه
     if (ctx.authBusy) { await ctx.authBusy.catch(() => {}); ctx.authBusy = null; }
-
-    stopExpenses();
+    stopData();
     state.user = user;
-    state.expenses = [];
-    state.expanded.clear();
-    state.filter = 'all';
-
-    if (!user) {
-      state.profile = null;
-      show(mountAuth);
-      return;
-    }
-
-    try {
-      state.profile = await ctx.backend.getProfile(user.uid);
-    } catch (e) {
-      console.warn('[Qatta] profile read failed', e);
-      state.profile = null;
-    }
-
-    if (!state.profile?.name) show(mountProfile);
-    else goHome();
+    if (!user) { state.profile = null; show(mountAuth); return; }
+    try { state.profile = await ctx.backend.getProfile(user.uid); }
+    catch (e) { console.warn('[Qatta] profile', e); state.profile = null; toast(errorMessage(e), 'error'); }
+    route();
   });
 }
 

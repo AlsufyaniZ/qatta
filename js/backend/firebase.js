@@ -1,7 +1,17 @@
 // ─────────────────────────────────────────────
-// Firebase backend — Auth (Email + Google) + Cloud Firestore
-// يُحمَّل Firebase JS SDK مباشرة من CDN (بدون أي build step)
+// Firebase backend — Auth (Phone+Password / Email / Google) + Cloud Firestore
+//
+// الدخول برقم الجوال وكلمة المرور:
+//   Firebase لا يوفّر "جوال + كلمة مرور" مباشرة، لذلك يُربط كل رقم بحساب
+//   Email/Password داخلي بالشكل: 966501234567@phone.qatta.app
+//   (البريد الحقيقي — إن وُجد — يُحفظ في الملف الشخصي فقط)
+//
+// هيكل البيانات:
+//   users/{uid}                         الملف الشخصي
+//   groups/{code}                       المجموعة (الرمز = معرّف المستند)
+//   groups/{code}/expenses/{expenseId}  مصاريف المجموعة
 // ─────────────────────────────────────────────
+import { phoneToAuthEmail, isPhoneAuthEmail } from '../models.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2';
 
@@ -13,13 +23,10 @@ export async function createFirebaseBackend(config) {
   ]);
 
   const app = appMod.initializeApp(config);
-
-  // ── Auth ──
   const auth = authMod.getAuth(app);
-  auth.languageCode = 'ar'; // رسائل التحقق وإعادة التعيين بالعربية
+  auth.languageCode = 'ar';
   authMod.getRedirectResult(auth).catch(() => {});
 
-  // ── Firestore (مع تخزين محلي للعمل دون اتصال) ──
   let db;
   try {
     db = fs.initializeFirestore(app, {
@@ -28,42 +35,67 @@ export async function createFirebaseBackend(config) {
   } catch {
     db = fs.getFirestore(app);
   }
-  const expensesCol = fs.collection(db, 'expenses');
 
   const toUser = (u) => u && ({
     uid: u.uid,
-    email: (u.email || '').toLowerCase(),
+    email: isPhoneAuthEmail(u.email || '') ? '' : (u.email || '').toLowerCase(),
     displayName: u.displayName || '',
-    emailVerified: !!u.emailVerified,
-    isGoogle: u.providerData.some(p => p.providerId === 'google.com'),
+    method: isPhoneAuthEmail(u.email || '') ? 'phone'
+      : u.providerData.some(p => p.providerId === 'google.com') ? 'google' : 'email',
   });
 
   const toDate = (v) => (v && typeof v.toDate === 'function') ? v.toDate() : (v ? new Date(v) : new Date());
-
   const fromDoc = (d) => {
     const x = d.data({ serverTimestamps: 'estimate' });
     return { ...x, id: d.id, createdAt: toDate(x.createdAt), updatedAt: toDate(x.updatedAt) };
   };
 
+  const groupRef = (code) => fs.doc(db, 'groups', code);
+  const expensesCol = (code) => fs.collection(db, 'groups', code, 'expenses');
+
+  /** يحوّل أخطاء الحسابات الداخلية إلى رموز خاصة برقم الجوال */
+  const phoneErr = (e) => {
+    const map = {
+      'auth/invalid-credential': 'phone/invalid-credential',
+      'auth/wrong-password': 'phone/invalid-credential',
+      'auth/user-not-found': 'phone/invalid-credential',
+      'auth/email-already-in-use': 'phone/already-in-use',
+      'auth/invalid-email': 'phone/invalid',
+    };
+    if (map[e?.code]) e.code = map[e.code];
+    return e;
+  };
+
   return {
     mode: 'firebase',
 
-    // ── Authentication ──
+    // ───────────── Authentication ─────────────
     onAuth(cb) {
       return authMod.onAuthStateChanged(auth, (u) => cb(toUser(u)));
+    },
+
+    async signInPhone(e164, password) {
+      try { await authMod.signInWithEmailAndPassword(auth, phoneToAuthEmail(e164), password); }
+      catch (e) { throw phoneErr(e); }
+    },
+
+    async signUpPhone(e164, password, profile) {
+      let cred;
+      try { cred = await authMod.createUserWithEmailAndPassword(auth, phoneToAuthEmail(e164), password); }
+      catch (e) { throw phoneErr(e); }
+      await authMod.updateProfile(cred.user, { displayName: profile.name });
+      await fs.setDoc(fs.doc(db, 'users', cred.user.uid), { ...profile, phone: e164, createdAt: fs.serverTimestamp() });
     },
 
     async signInEmail(email, password) {
       await authMod.signInWithEmailAndPassword(auth, email, password);
     },
 
-    async signUpEmail(name, email, password, profile) {
+    async signUpEmail(email, password, profile) {
       const { user } = await authMod.createUserWithEmailAndPassword(auth, email, password);
-      await authMod.updateProfile(user, { displayName: name });
+      await authMod.updateProfile(user, { displayName: profile.name });
       await fs.setDoc(fs.doc(db, 'users', user.uid), {
-        ...profile,
-        email: (user.email || '').toLowerCase(),
-        createdAt: fs.serverTimestamp(),
+        ...profile, email: (user.email || '').toLowerCase(), createdAt: fs.serverTimestamp(),
       });
       authMod.sendEmailVerification(user).catch(() => {});
     },
@@ -74,7 +106,6 @@ export async function createFirebaseBackend(config) {
       try {
         await authMod.signInWithPopup(auth, provider);
       } catch (e) {
-        // بعض المتصفحات (خصوصاً داخل التطبيقات) تمنع النوافذ المنبثقة
         if (e?.code === 'auth/popup-blocked' || e?.code === 'auth/operation-not-supported-in-this-environment') {
           await authMod.signInWithRedirect(auth, provider);
         } else {
@@ -87,79 +118,86 @@ export async function createFirebaseBackend(config) {
       await authMod.sendPasswordResetEmail(auth, email);
     },
 
-    async resendVerification() {
-      if (auth.currentUser) await authMod.sendEmailVerification(auth.currentUser);
-    },
-
-    /** يعيد تحميل المستخدم ويجدد التوكن حتى تقرأ قواعد Firestore حالة email_verified الجديدة */
-    async reloadUser() {
-      if (!auth.currentUser) return null;
-      await auth.currentUser.reload();
-      await auth.currentUser.getIdToken(true);
-      return toUser(auth.currentUser);
-    },
-
     async signOut() {
       await authMod.signOut(auth);
     },
 
-    // ── User profile: users/{uid} ──
+    // ───────────── Profile ─────────────
     async getProfile(uid) {
       const snap = await fs.getDoc(fs.doc(db, 'users', uid));
       return snap.exists() ? snap.data() : null;
     },
 
-    async saveProfile(uid, data) {
+    async saveProfile(uid, data, groupCodes = []) {
       await fs.setDoc(fs.doc(db, 'users', uid), { ...data, updatedAt: fs.serverTimestamp() }, { merge: true });
+      // تحديث الاسم/الرقم/اللون في كل مجموعة ينتمي لها المستخدم
+      const info = { name: data.name, phone: data.phone || '', avatarColor: data.avatarColor };
+      await Promise.all(groupCodes.map(code =>
+        fs.updateDoc(groupRef(code), { [`memberInfo.${uid}`]: info, updatedAt: fs.serverTimestamp() }).catch(() => {})));
     },
 
-    // ── Expenses: expenses/{id} ──
-    /**
-     * يستمع لحظياً لمصاريف المستخدم:
-     *  1) التي أنشأها (ownerId == uid)
-     *  2) التي أُضيف إليها ببريده (memberEmails array-contains email) — تتطلب بريداً موثّقاً
-     */
-    subscribeExpenses(user, onData, onError) {
-      const owned = new Map();
-      const shared = new Map();
-      const emit = () => onData([...new Map([...shared, ...owned]).values()]);
-
-      const unsubOwned = fs.onSnapshot(
-        fs.query(expensesCol, fs.where('ownerId', '==', user.uid)),
-        (snap) => { owned.clear(); snap.forEach(d => owned.set(d.id, fromDoc(d))); emit(); },
+    // ───────────── Groups ─────────────
+    subscribeGroups(uid, onData, onError) {
+      return fs.onSnapshot(
+        fs.query(fs.collection(db, 'groups'), fs.where('members', 'array-contains', uid)),
+        (snap) => onData(snap.docs.map(fromDoc)),
         onError,
       );
-
-      let unsubShared = () => {};
-      if (user.email && user.emailVerified) {
-        unsubShared = fs.onSnapshot(
-          fs.query(expensesCol, fs.where('memberEmails', 'array-contains', user.email)),
-          (snap) => { shared.clear(); snap.forEach(d => shared.set(d.id, fromDoc(d))); emit(); },
-          (e) => console.warn('[Qatta] shared expenses listener:', e),
-        );
-      }
-      return () => { unsubOwned(); unsubShared(); };
     },
 
-    async addExpense(expense) {
+    async createGroup(code, { name, emoji }, uid, memberInfo) {
+      await fs.setDoc(groupRef(code), {
+        name, emoji,
+        createdBy: uid,
+        members: [uid],
+        memberInfo: { [uid]: memberInfo },
+        createdAt: fs.serverTimestamp(),
+        updatedAt: fs.serverTimestamp(),
+      });
+    },
+
+    /** الانضمام بالرمز: يضيف المستخدم نفسه فقط (تسمح به القواعد لغير الأعضاء) */
+    async joinGroup(code, uid, memberInfo) {
+      await fs.updateDoc(groupRef(code), {
+        members: fs.arrayUnion(uid),
+        [`memberInfo.${uid}`]: memberInfo,
+        updatedAt: fs.serverTimestamp(),
+      });
+    },
+
+    /** حذف المجموعة (للمنشئ): تُحذف المصاريف أولاً ثم المجموعة */
+    async deleteGroup(code) {
+      const snap = await fs.getDocs(expensesCol(code));
+      for (let i = 0; i < snap.docs.length; i += 400) {
+        const batch = fs.writeBatch(db);
+        snap.docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+        await batch.commit();
+      }
+      await fs.deleteDoc(groupRef(code));
+    },
+
+    // ───────────── Expenses ─────────────
+    subscribeExpenses(code, onData, onError) {
+      return fs.onSnapshot(expensesCol(code), (snap) => onData(snap.docs.map(fromDoc)), onError);
+    },
+
+    async addExpense(code, expense) {
       const { id, ...data } = expense;
-      const ref = await fs.addDoc(expensesCol, {
+      await fs.addDoc(expensesCol(code), {
         ...data,
         createdAt: fs.Timestamp.fromDate(expense.createdAt || new Date()),
         updatedAt: fs.serverTimestamp(),
       });
-      return ref.id;
     },
 
-    async updateParticipants(expenseId, participants) {
-      await fs.updateDoc(fs.doc(db, 'expenses', expenseId), {
-        participants,
-        updatedAt: fs.serverTimestamp(),
+    async updateParticipants(code, expenseId, participants) {
+      await fs.updateDoc(fs.doc(db, 'groups', code, 'expenses', expenseId), {
+        participants, updatedAt: fs.serverTimestamp(),
       });
     },
 
-    async deleteExpense(expenseId) {
-      await fs.deleteDoc(fs.doc(db, 'expenses', expenseId));
+    async deleteExpense(code, expenseId) {
+      await fs.deleteDoc(fs.doc(db, 'groups', code, 'expenses', expenseId));
     },
   };
 }

@@ -1,9 +1,8 @@
 // ─────────────────────────────────────────────
 // Models & domain logic — Qatta (قطة)
-// مكافئ Models.swift + منطق الحساب في ViewModels.swift
 // ─────────────────────────────────────────────
 
-/** فئات المصاريف (ExpenseCategory) */
+/** فئات المصاريف */
 export const CATEGORIES = [
   { id: 'food',          name: 'طعام وشراب', icon: 'food' },
   { id: 'transport',     name: 'مواصلات',    icon: 'car' },
@@ -16,22 +15,51 @@ export const CATEGORIES = [
 ];
 export const category = (id) => CATEGORIES.find(c => c.id === id) || CATEGORIES[CATEGORIES.length - 1];
 
-/** طرق التقسيم (SplitMethod) */
-export const SPLIT = { equal: 'equal', custom: 'custom', percentage: 'percentage' };
+/** المصطلحات الموحّدة في الواجهة */
+export const T = {
+  owedToMe: 'الفلوس اللي لي',
+  iOwe: 'الفلوس اللي علي',
+  paid: 'مدفوع',
+};
 
-/** فلاتر الشاشة الرئيسية (ExpenseFilter) */
+/** فلاتر قائمة المصاريف داخل المجموعة */
 export const FILTERS = [
   { id: 'all',      label: 'الكل' },
-  { id: 'iOwe',     label: 'أنا مدين' },
-  { id: 'owedToMe', label: 'لي دين' },
-  { id: 'settled',  label: 'مسوّى' },
+  { id: 'iOwe',     label: T.iOwe },
+  { id: 'owedToMe', label: T.owedToMe },
+  { id: 'settled',  label: T.paid },
 ];
 
-/** لوحة ألوان الصور الرمزية (AvatarColor.palette) */
+/** المدى الزمني للمصاريف الإجمالية */
+export const PERIODS = [
+  { id: '1m',  label: 'شهر',      months: 1 },
+  { id: '3m',  label: '٣ أشهر',   months: 3 },
+  { id: '6m',  label: '٦ أشهر',   months: 6 },
+  { id: '9m',  label: '٩ أشهر',   months: 9 },
+  { id: '12m', label: 'سنة',      months: 12 },
+  { id: 'all', label: 'الكل',     months: null },
+];
+export function periodStart(periodId) {
+  const p = PERIODS.find(x => x.id === periodId);
+  if (!p || !p.months) return null;
+  const d = new Date();
+  d.setMonth(d.getMonth() - p.months);
+  return d;
+}
+
+/** رموز المجموعات وقوالب جاهزة */
+export const GROUP_EMOJIS = ['🏠', '🏕️', '✈️', '🍽️', '🎉', '☕', '⚽', '🛒', '💼', '👨‍👩‍👧', '🎮', '🚗'];
+export const GROUP_TEMPLATES = [
+  { name: 'قطة المنزل', emoji: '🏠' },
+  { name: 'قطة الاستراحة', emoji: '🏕️' },
+  { name: 'قطة السفر', emoji: '✈️' },
+];
+
+/** لوحة ألوان الصور الرمزية */
 export const AVATAR_PALETTE = ['#4F6AF0', '#E25C5C', '#4CAF82', '#F0A84F', '#9B59B6', '#2E86AB', '#E67E22', '#1ABC9C'];
 export const randomAvatarColor = () => AVATAR_PALETTE[Math.floor(Math.random() * AVATAR_PALETTE.length)];
 
-/** رموز الدول (نفس قائمة تطبيق الجوال) */
+/** رموز الدول */
 export const COUNTRY_CODES = [
   { flag: '🇸🇦', code: '+966', name: 'السعودية' },
   { flag: '🇦🇪', code: '+971', name: 'الإمارات' },
@@ -43,10 +71,9 @@ export const COUNTRY_CODES = [
   { flag: '🇪🇬', code: '+20',  name: 'مصر' },
 ];
 
-/** الأحرف الأولى من الاسم (تدعم الأسماء العربية) */
+/** الأحرف الأولى من الاسم: "محمد العلي" → "مع" */
 export function initials(name = '') {
   const parts = String(name).trim().split(/\s+/).filter(Boolean);
-  // تجاوز أداة التعريف "ال" في اسم العائلة: "محمد العلي" → "مع"
   const first = (w) => (w.startsWith('ال') && w.length > 3 ? w[2] : w[0]);
   if (parts.length >= 2) return parts[0][0] + first(parts[1]);
   return (parts[0] || '؟').slice(0, 2);
@@ -66,9 +93,36 @@ export function parseAmount(s) {
 export const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 /**
- * تقسيم متساوٍ بدقة الهللة: يُضاف فرق التقريب على أول مشارك (الدافع)
- * حتى يساوي مجموع الحصص المبلغ الكلي تماماً.
+ * يبني رقماً دولياً (E.164) من رمز الدولة والرقم المحلي.
+ * "0501234567" + "+966" → "+966501234567". يرجع null إذا كان غير صالح.
  */
+export function toE164(countryCode, local) {
+  let d = normalizeDigits(local).replace(/[^\d+]/g, '');
+  if (d.startsWith('00')) d = '+' + d.slice(2);
+  if (d.startsWith('+')) {
+    const digits = d.slice(1).replace(/\D/g, '');
+    return digits.length >= 9 && digits.length <= 15 ? '+' + digits : null;
+  }
+  d = d.replace(/\D/g, '').replace(/^0+/, '');
+  const cc = countryCode.replace('+', '');
+  if (d.startsWith(cc) && d.length > 10) d = d.slice(cc.length);
+  if (d.length < 7 || d.length > 11) return null;
+  return '+' + cc + d;
+}
+
+/** البريد الداخلي المستخدم لحسابات الجوال في Firebase Auth */
+export const PHONE_EMAIL_DOMAIN = 'phone.qatta.app';
+export const phoneToAuthEmail = (e164) => `${e164.replace('+', '')}@${PHONE_EMAIL_DOMAIN}`;
+export const isPhoneAuthEmail = (email = '') => email.endsWith('@' + PHONE_EMAIL_DOMAIN);
+
+/** رمز المجموعة: 8 أحرف بدون أحرف ملتبسة (0/O، 1/I) */
+export function newGroupCode() {
+  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  return [...bytes].map(b => A[b % A.length]).join('');
+}
+
+/** تقسيم متساوٍ بدقة الهللة — فرق التقريب على أول مشارك */
 export function equalShares(total, count) {
   if (!count) return [];
   const base = Math.floor((total / count) * 100) / 100;
@@ -78,13 +132,7 @@ export function equalShares(total, count) {
 }
 
 // ── Helpers تعتمد على المستخدم الحالي ──
-
-/** هل هذا المشارك هو المستخدم الحالي؟ (بالمعرّف أو بالبريد) */
-export function isMe(p, me) {
-  if (!p || !me) return false;
-  if (p.id === me.uid) return true;
-  return !!(p.email && me.email && p.email.toLowerCase() === me.email.toLowerCase());
-}
+export const isMe = (p, me) => !!p && !!me && p.id === me.uid;
 export const myParticipant = (exp, me) => exp.participants.find(p => isMe(p, me));
 export const iAmPayer = (exp, me) => exp.paidByUserId === me.uid;
 export const payerOf = (exp) => exp.participants.find(p => p.id === exp.paidByUserId);
@@ -93,7 +141,7 @@ export const settledAmount = (exp) => exp.participants.filter(p => p.isPaid).red
 export const remainingAmount = (exp) => round2(exp.totalAmount - settledAmount(exp));
 export const isFullySettled = (exp) => exp.participants.every(p => p.isPaid);
 
-/** الأرصدة (HomeViewModel) */
+/** الأرصدة المستحقة (كل الفترات) */
 export function balances(expenses, me) {
   let owedToMe = 0, iOwe = 0;
   for (const exp of expenses) {
@@ -108,16 +156,43 @@ export function balances(expenses, me) {
   return { owedToMe, iOwe, net: round2(owedToMe - iOwe) };
 }
 
-/** فلترة وترتيب المصاريف (filteredExpenses) */
-export function filterExpenses(expenses, filter, me) {
+/** إجمالي المصاريف وحصتي ضمن فترة */
+export function periodTotals(expenses, me, periodId) {
+  const start = periodStart(periodId);
+  const inRange = start ? expenses.filter(e => e.createdAt >= start) : expenses;
+  const total = round2(inRange.reduce((s, e) => s + (e.totalAmount || 0), 0));
+  const myShare = round2(inRange.reduce((s, e) => s + (myParticipant(e, me)?.shareAmount || 0), 0));
+  return { total, myShare, count: inRange.length };
+}
+
+/** فلترة قائمة المصاريف — الديون غير المدفوعة تُعرض لكل الفترات */
+export function filterExpenses(expenses, filter, me, periodId) {
   const byDate = (a, b) => b.createdAt - a.createdAt;
-  let list = expenses;
+  const start = periodStart(periodId);
+  const inPeriod = (e) => !start || e.createdAt >= start;
+  let list;
   if (filter === 'iOwe') {
     list = expenses.filter(e => !iAmPayer(e, me) && e.participants.some(p => isMe(p, me) && !p.isPaid));
   } else if (filter === 'owedToMe') {
     list = expenses.filter(e => iAmPayer(e, me) && e.participants.some(p => !isMe(p, me) && !p.isPaid));
   } else if (filter === 'settled') {
-    list = expenses.filter(isFullySettled);
+    list = expenses.filter(e => isFullySettled(e) && inPeriod(e));
+  } else {
+    list = expenses.filter(inPeriod);
   }
   return [...list].sort(byDate);
+}
+
+/** معلومات العضو المعروضة داخل المجموعة */
+export const memberInfoFrom = (profile) => ({
+  name: profile.name || '',
+  phone: profile.phone || '',
+  avatarColor: profile.avatarColor || AVATAR_PALETTE[0],
+});
+
+/** قائمة أعضاء المجموعة كمصفوفة مرتبة (المنشئ أولاً) */
+export function groupMembers(group) {
+  const info = group.memberInfo || {};
+  return (group.members || []).map(uid => ({ uid, ...(info[uid] || { name: 'عضو', phone: '', avatarColor: '#A9AECB' }) }))
+    .sort((a, b) => (a.uid === group.createdBy ? -1 : b.uid === group.createdBy ? 1 : 0));
 }

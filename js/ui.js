@@ -46,6 +46,15 @@ const ICONS = {
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
   chevronRight: '<path d="m9 18 6-6-6-6"/>',
+  chevronLeft: '<path d="m15 18-6-6 6-6"/>',
+  settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  wallet: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
 };
 
 export function icon(name, size = 20, cls = '') {
@@ -147,10 +156,77 @@ const ERRORS = {
   'auth/unauthorized-domain': 'هذا النطاق غير مصرّح به في Firebase. أضفه في Authentication → Settings → Authorized domains',
   'auth/operation-not-allowed': 'طريقة الدخول هذه غير مفعّلة في Firebase Console',
   'auth/account-exists-with-different-credential': 'يوجد حساب بهذا البريد بطريقة دخول مختلفة',
+  'phone/invalid-credential': 'رقم الجوال أو كلمة المرور غير صحيحة',
+  'phone/already-in-use': 'رقم الجوال مسجّل بالفعل. جرّب تسجيل الدخول',
+  'phone/invalid': 'رقم الجوال غير صحيح',
+  'not-found': 'لم نجد مجموعة بهذا الرمز',
   'permission-denied': 'ليس لديك صلاحية لتنفيذ هذا الإجراء',
   'unavailable': 'الخدمة غير متاحة حالياً. تحقّق من الاتصال',
 };
 export function errorMessage(e) {
   const code = e?.code || e?.message;
   return ERRORS[code] || 'حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى';
+}
+
+// ── Theme (الوضع الغامق) ──
+const THEME_KEY = 'qatta-theme';
+export function isDark() { return document.documentElement.dataset.theme === 'dark'; }
+export function setDark(on) {
+  document.documentElement.dataset.theme = on ? 'dark' : 'light';
+  try { localStorage.setItem(THEME_KEY, on ? 'dark' : 'light'); } catch {}
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', on ? '#0F1117' : '#3D5AF1');
+}
+
+/** حقل رقم الجوال مع اختيار رمز الدولة */
+export function phoneField({ id = 'phone', label = 'رقم الجوال', cc = '+966', value = '', hint = '' , countries }) {
+  return `
+    <label class="field" for="${id}">
+      <span class="field-label">${label}${hint ? ` <em>${hint}</em>` : ''}</span>
+      <span class="phone-row">
+        <select id="${id}-cc" aria-label="رمز الدولة">
+          ${countries.map(c => `<option value="${c.code}" ${c.code === cc ? 'selected' : ''}>${c.flag} ${c.code}</option>`).join('')}
+        </select>
+        <span class="field-box grow">
+          ${icon('phone', 18)}
+          <input id="${id}" type="tel" inputmode="tel" dir="ltr" placeholder="5XX XXX XXXX" value="${esc(value)}" autocomplete="tel-national">
+        </span>
+      </span>
+    </label>`;
+}
+
+/** مفتاح تبديل */
+export function toggle(id, on, label) {
+  return `<button type="button" role="switch" aria-checked="${on}" aria-label="${esc(label)}" class="switch ${on ? 'on' : ''}" id="${id}"><span></span></button>`;
+}
+
+/** ورقة سفلية (Bottom sheet) عامة */
+export function openSheet(innerHtml, { onClose, label = '' } = {}) {
+  const el = document.createElement('div');
+  el.className = 'overlay sheet-overlay';
+  el.innerHTML = `<div class="sheet-backdrop"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(label)}"><span class="handle"></span>${innerHtml}</div></div>`;
+  document.body.append(el);
+  document.body.classList.add('no-scroll');
+  const bd = el.querySelector('.sheet-backdrop');
+  requestAnimationFrame(() => bd.classList.add('open'));
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  function close() {
+    document.removeEventListener('keydown', onKey);
+    bd.classList.remove('open');
+    setTimeout(() => {
+      el.remove();
+      if (!document.querySelector('.overlay')) document.body.classList.remove('no-scroll');
+      onClose?.();
+    }, 260);
+  }
+  bd.addEventListener('click', (e) => { if (e.target === bd) close(); });
+  document.addEventListener('keydown', onKey);
+  return { el, close };
+}
+
+/** مشاركة رابط/نص (Web Share API أو نسخ) */
+export async function shareText({ title, text, url }) {
+  if (navigator.share) {
+    try { await navigator.share({ title, text, url }); return 'shared'; } catch (e) { if (e?.name === 'AbortError') return 'cancel'; }
+  }
+  try { await navigator.clipboard.writeText(url ? `${text}\n${url}` : text); return 'copied'; } catch { return 'failed'; }
 }
