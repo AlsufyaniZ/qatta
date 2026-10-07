@@ -2,11 +2,12 @@
 // Add Expense (داخل مجموعة) — المبلغ، الوصف، الفئة، من دفع، المشاركون، طريقة التقسيم
 // المشاركون يُختارون من أعضاء المجموعة، مع إمكانية إضافة ضيف من خارجها
 // ─────────────────────────────────────────────
-import { icon, esc, avatar, money, num, toast, errorMessage, setLoading, shake, field } from '../ui.js';
-import { CATEGORIES, parseAmount, equalShares, round2, normalizeDigits, randomAvatarColor, groupMembers, toE164 } from '../models.js';
+import { icon, esc, avatar, money, num, toast, errorMessage, setLoading, shake, field, RIYAL } from '../ui.js';
+import { CATEGORIES, category, parseAmount, equalShares, round2, normalizeDigits, randomAvatarColor, groupMembers, toE164 } from '../models.js';
 
-export function openAddExpense(ctx, group) {
+export function openAddExpense(ctx, group, existing = null) {
   if (!group) return;
+  const editing = !!existing;
   const { state, backend } = ctx;
   const me = state.user;
   const members = groupMembers(group);
@@ -16,7 +17,7 @@ export function openAddExpense(ctx, group) {
   const form = {
     title: '',
     amountText: '',
-    category: 'other',
+    category: null,          // الفئة أو الوصف — أحدهما إلزامي
     split: 'equal',
     note: '',
     payer: me.uid,
@@ -24,13 +25,32 @@ export function openAddExpense(ctx, group) {
     people: members.map(m => ({ id: m.uid, name: m.name, phone: m.phone, avatarColor: m.avatarColor, selected: true, isGuest: false, shareAmount: 0 })),
   };
 
+  // ── وضع التعديل: تعبئة القيم الحالية ──
+  if (editing) {
+    const catName = category(existing.category).name;
+    form.title = existing.title === catName ? '' : existing.title;
+    form.amountText = String(existing.totalAmount);
+    form.category = existing.category || null;
+    form.split = existing.splitMethod === 'custom' ? 'custom' : 'equal';
+    form.note = existing.note || '';
+    form.payer = existing.paidByUserId;
+    const byId = new Map(existing.participants.map(p => [p.id, p]));
+    form.people.forEach(p => { const x = byId.get(p.id); p.selected = !!x && x.shareAmount > 0; p.shareAmount = x?.shareAmount || 0; });
+    // ضيوف أو أعضاء سابقون موجودون في المصروف
+    for (const x of existing.participants) {
+      if (form.people.some(p => p.id === x.id)) continue;
+      form.people.push({ id: x.id, name: x.name, phone: x.phone || '', avatarColor: x.avatarColor, selected: x.shareAmount > 0,
+        isGuest: !!x.isGuest, isFormer: !x.isGuest, shareAmount: x.shareAmount || 0 });
+    }
+  }
+
   const selected = () => form.people.filter(p => p.selected);
   const total = () => parseAmount(form.amountText);
   const customTotal = () => round2(selected().reduce((s, p) => s + (p.shareAmount || 0), 0));
   const remaining = () => round2(total() - customTotal());
   const balanced = () => Math.abs(remaining()) < 0.01;
   const payerIncluded = () => selected().some(p => p.id === form.payer);
-  const isValid = () => form.title.trim() && total() > 0 && selected().length >= 2 && (form.split === 'equal' || balanced());
+  const isValid = () => (form.title.trim() || form.category) && total() > 0 && selected().length >= 2 && (form.split === 'equal' || balanced());
 
   function recalcEqual() {
     // الدافع أولاً حتى يتحمّل فرق التقريب
@@ -45,12 +65,12 @@ export function openAddExpense(ctx, group) {
   el.className = 'overlay';
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-modal', 'true');
-  el.setAttribute('aria-label', 'مصروف جديد');
+  el.setAttribute('aria-label', editing ? 'تعديل المصروف' : 'مصروف جديد');
   el.innerHTML = `
     <div class="overlay-panel">
       <header class="navbar">
         <button class="nav-text" data-act="cancel">إلغاء</button>
-        <h2>مصروف جديد <small>${esc(group.emoji || '')} ${esc(group.name)}</small></h2>
+        <h2>${editing ? 'تعديل المصروف' : 'مصروف جديد'} <small>${esc(group.emoji || '')} ${esc(group.name)}</small></h2>
         <span class="nav-spacer"></span>
       </header>
 
@@ -59,20 +79,20 @@ export function openAddExpense(ctx, group) {
           <span class="muted sm">المبلغ الكلي</span>
           <div class="amount-row" dir="ltr">
             <input id="amount" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="المبلغ الكلي">
-            <span class="cur">ر.س</span>
+            <span class="cur riyal">${RIYAL}</span>
           </div>
           <span class="amount-line"></span>
         </section>
 
         <div class="form-body">
-          <section class="card anim-up d1">
-            <label class="mini-label" for="title">وصف المصروف</label>
-            <span class="field-box soft">${icon('tag', 16)}<input id="title" placeholder="مثال: عشاء الاستراحة" maxlength="120" enterkeyhint="next"></span>
+          <section class="anim-up d1">
+            <h3 class="sec-head">الفئة <small class="muted">— أو اكتب وصفاً</small></h3>
+            <div class="cat-scroll" id="cats"></div>
           </section>
 
-          <section class="anim-up d2">
-            <h3 class="sec-head">الفئة</h3>
-            <div class="cat-scroll" id="cats"></div>
+          <section class="card anim-up d2">
+            <label class="mini-label" for="title">الوصف <span id="title-hint">(اختياري عند اختيار فئة)</span></label>
+            <span class="field-box soft">${icon('tag', 16)}<input id="title" placeholder="مثال: عشاء الاستراحة" maxlength="120" enterkeyhint="done"></span>
           </section>
 
           <section class="anim-up d3">
@@ -104,7 +124,7 @@ export function openAddExpense(ctx, group) {
 
           <section class="save-wrap anim-up d6">
             <div class="form-error" id="save-error" hidden></div>
-            <button class="btn-primary" id="save"><span>حفظ المصروف</span><i class="spinner"></i></button>
+            <button class="btn-primary" id="save"><span>${editing ? 'حفظ التعديلات' : 'حفظ المصروف'}</span><i class="spinner"></i></button>
             <p class="summary" id="summary"></p>
           </section>
         </div>
@@ -135,6 +155,8 @@ export function openAddExpense(ctx, group) {
       <button class="cat-chip ${form.category === c.id ? 'on' : ''}" data-cat="${c.id}">
         <span class="cat-ic">${icon(c.icon, 19)}</span><span class="cat-name">${c.name}</span>
       </button>`).join('');
+    const ti = $('#title');
+    ti.placeholder = form.category ? category(form.category).name : 'مثال: عشاء الاستراحة';
   }
 
   function renderPayers() {
@@ -157,7 +179,7 @@ export function openAddExpense(ctx, group) {
         <button class="check ${on ? 'on' : ''}" data-check="${esc(p.id)}" role="checkbox" aria-checked="${on}" aria-label="${esc(p.name)}">${icon('check', 14)}</button>
         ${avatar(p.name, p.avatarColor, 36)}
         <div class="p-info">
-          <span class="p-name">${esc(p.name)}${p.id === me.uid ? ' <em class="tag">أنت</em>' : ''}${p.id === form.payer ? ' <em class="tag tag-accent">الدافع</em>' : ''}${p.isGuest ? ' <em class="tag tag-muted">ضيف</em>' : ''}</span>
+          <span class="p-name">${esc(p.name)}${p.id === me.uid ? ' <em class="tag">أنت</em>' : ''}${p.id === form.payer ? ' <em class="tag tag-accent">الدافع</em>' : ''}${p.isGuest ? ' <em class="tag tag-muted">ضيف</em>' : ''}${p.isFormer ? ' <em class="tag tag-muted">عضو سابق</em>' : ''}</span>
           ${p.phone ? `<span class="p-phone" dir="ltr">${esc(p.phone)}</span>` : ''}
         </div>
         ${!on ? '<span class="p-amt muted">—</span>'
@@ -173,7 +195,7 @@ export function openAddExpense(ctx, group) {
   function refreshEqualAmounts() {
     if (form.split !== 'equal') return;
     recalcEqual();
-    form.people.forEach(p => { const s = el.querySelector(`[data-share="${CSS.escape(p.id)}"]`); if (s) s.textContent = money(p.shareAmount); });
+    form.people.forEach(p => { const s = el.querySelector(`[data-share="${CSS.escape(p.id)}"]`); if (s) s.innerHTML = money(p.shareAmount); });
   }
 
   function renderValidation() {
@@ -194,7 +216,7 @@ export function openAddExpense(ctx, group) {
     const btn = $('#save');
     btn.dataset.disabled = String(!valid);
     if (!btn.classList.contains('loading')) btn.disabled = !valid;
-    $('#summary').textContent = valid ? `سيتم تقسيم ${money(total())} على ${num(selected().length)} أشخاص` : '';
+    $('#summary').innerHTML = valid ? `سيتم تقسيم ${money(total())} على ${num(selected().length)} أشخاص` : (!form.title.trim() && !form.category ? 'اختر فئة أو اكتب وصفاً' : '');
   }
 
   function refreshAll() {
@@ -233,7 +255,7 @@ export function openAddExpense(ctx, group) {
     if (t.dataset.act === 'cancel') return close();
     if (t.dataset.act === 'add-guest') return openSheet();
     if (t.dataset.act === 'contacts') return pickContact();
-    if (t.dataset.cat) { form.category = t.dataset.cat; renderCategories(); return; }
+    if (t.dataset.cat) { form.category = form.category === t.dataset.cat ? null : t.dataset.cat; renderCategories(); renderSave(); return; }
     if (t.dataset.payer) { form.payer = t.dataset.payer; refreshAll(); return; }
     if (t.dataset.split) { form.split = t.dataset.split; renderSplit(); refreshAll(); return; }
     if (t.dataset.check) {
@@ -281,30 +303,31 @@ export function openAddExpense(ctx, group) {
     const sel = selected();
     let participants = sel.map(p => ({
       id: p.id, name: p.name, phone: p.phone || '', avatarColor: p.avatarColor,
-      shareAmount: round2(p.shareAmount), isPaid: p.id === form.payer, isGuest: !!p.isGuest,
+      shareAmount: round2(p.shareAmount), isGuest: !!p.isGuest,
     }));
     // إذا لم يكن الدافع مشاركاً نضيفه بحصة صفر حتى يظهر كدافع
     if (!participants.some(p => p.id === form.payer)) {
       const payer = form.people.find(p => p.id === form.payer);
-      participants = [{ id: payer.id, name: payer.name, phone: payer.phone || '', avatarColor: payer.avatarColor, shareAmount: 0, isPaid: true, isGuest: false }, ...participants];
+      participants = [{ id: payer.id, name: payer.name, phone: payer.phone || '', avatarColor: payer.avatarColor, shareAmount: 0, isGuest: false }, ...participants];
     }
     const expense = {
-      title: form.title.trim(),
+      title: form.title.trim() || category(form.category).name,
       totalAmount: round2(total()),
       currency: 'SAR',
-      category: form.category,
+      category: form.category || 'other',
       paidByUserId: form.payer,
-      createdBy: me.uid,
+      createdBy: editing ? existing.createdBy : me.uid,
       participants,
       participantIds: participants.filter(p => !p.isGuest).map(p => p.id),
       splitMethod: form.split,
       note: form.note.trim() || null,
-      createdAt: new Date(),
+      createdAt: editing ? existing.createdAt : new Date(),
     };
     setLoading(btn, true);
     try {
-      await backend.addExpense(group.id, expense);
-      toast('تم حفظ المصروف', 'success');
+      if (editing) await backend.updateExpense(group.id, existing.id, expense);
+      else await backend.addExpense(group.id, expense);
+      toast(editing ? 'تم حفظ التعديلات' : 'تم حفظ المصروف', 'success');
       close();
     } catch (e) {
       console.warn(e);
@@ -321,6 +344,15 @@ export function openAddExpense(ctx, group) {
   const onKey = (e) => { if (e.key === 'Escape') { if (!$('#p-sheet').hidden) closeSheet(); else close(); } };
   document.addEventListener('keydown', onKey);
 
-  renderCategories(); renderSplit(); refreshAll();
-  setTimeout(() => $('#amount').focus({ preventScroll: true }), 350);
+  if (editing) {
+    $('#amount').value = form.amountText;
+    $('.amount-hero').classList.toggle('has-value', total() > 0);
+    $('#title').value = form.title;
+    $('#note').value = form.note;
+  }
+  renderCategories(); renderSplit();
+  // في التعديل نحافظ على الحصص المخصصة كما هي
+  if (form.split === 'equal') recalcEqual();
+  renderPayers(); renderParticipants(); renderValidation(); renderSave();
+  if (!editing) setTimeout(() => $('#amount').focus({ preventScroll: true }), 350);
 }

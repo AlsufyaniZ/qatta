@@ -54,6 +54,7 @@ const ICONS = {
   users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
   wallet: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+  pie: '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
 };
 
@@ -69,15 +70,27 @@ export function avatar(name, color = '#4F6AF0', size = 44) {
 }
 
 // ── Formatting ──
-const moneyFmt = new Map();
-export function money(n, currency = 'SAR') {
-  if (!moneyFmt.has(currency)) {
-    moneyFmt.set(currency, new Intl.NumberFormat('ar-SA', {
-      style: 'currency', currency, maximumFractionDigits: 2, minimumFractionDigits: 0,
-    }));
-  }
-  return moneyFmt.get(currency).format(n || 0);
+// رمز الريال السعودي الجديد (U+20C1) — يُعرض بخط saudi_riyal (انظر styles.css)
+export let RIYAL = '\u20C1';
+/** يتأكد من تحميل خط رمز الريال؛ إن تعذّر يُستخدم «ر.س» بدلاً منه */
+export async function ensureRiyalFont(timeout = 2500) {
+  try {
+    const faces = await Promise.race([
+      document.fonts.load('16px "SaudiRiyal"', '\u20C1'),
+      new Promise(r => setTimeout(() => r(null), timeout)),
+    ]);
+    if (!faces || !faces.length) RIYAL = 'ر.س';
+  } catch { RIYAL = 'ر.س'; }
+  document.documentElement.classList.toggle('riyal-fallback', RIYAL !== '\u20C1');
 }
+const amountFmt = new Intl.NumberFormat('ar-SA', { maximumFractionDigits: 2, minimumFractionDigits: 0 });
+/** مبلغ للعرض في الواجهة (HTML) مع رمز الريال */
+export function money(n) {
+  return `<span class="money"><bdi>${amountFmt.format(n || 0)}</bdi><span class="riyal" role="img" aria-label="ريال">${RIYAL}</span></span>`;
+}
+/** مبلغ كنص عادي (للمشاركة في واتساب) */
+const plainFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 0 });
+export const moneyText = (n) => `${plainFmt.format(n || 0)} ريال`;
 const numFmt = new Intl.NumberFormat('ar-SA', { maximumFractionDigits: 2 });
 export const num = (n) => numFmt.format(n || 0);
 

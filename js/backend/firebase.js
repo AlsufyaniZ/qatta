@@ -167,10 +167,14 @@ export async function createFirebaseBackend(config) {
 
     /** حذف المجموعة (للمنشئ): تُحذف المصاريف أولاً ثم المجموعة */
     async deleteGroup(code) {
-      const snap = await fs.getDocs(expensesCol(code));
-      for (let i = 0; i < snap.docs.length; i += 400) {
+      const [ex, st] = await Promise.all([
+        fs.getDocs(expensesCol(code)),
+        fs.getDocs(fs.collection(db, 'groups', code, 'settlements')),
+      ]);
+      const docs = [...ex.docs, ...st.docs];
+      for (let i = 0; i < docs.length; i += 400) {
         const batch = fs.writeBatch(db);
-        snap.docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+        docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
         await batch.commit();
       }
       await fs.deleteDoc(groupRef(code));
@@ -190,14 +194,42 @@ export async function createFirebaseBackend(config) {
       });
     },
 
-    async updateParticipants(code, expenseId, participants) {
+    /** تعديل المصروف (لمنشئه) */
+    async updateExpense(code, expenseId, expense) {
+      const { id, createdAt, ...data } = expense;
       await fs.updateDoc(fs.doc(db, 'groups', code, 'expenses', expenseId), {
-        participants, updatedAt: fs.serverTimestamp(),
+        ...data, updatedAt: fs.serverTimestamp(),
       });
     },
 
     async deleteExpense(code, expenseId) {
       await fs.deleteDoc(fs.doc(db, 'groups', code, 'expenses', expenseId));
+    },
+
+    // ───────────── Settlements (تقفيل الحساب) ─────────────
+    subscribeSettlements(code, onData, onError) {
+      return fs.onSnapshot(fs.collection(db, 'groups', code, 'settlements'), (snap) => onData(snap.docs.map(fromDoc)), onError);
+    },
+
+    async addSettlement(code, s) {
+      await fs.addDoc(fs.collection(db, 'groups', code, 'settlements'), {
+        ...s, createdAt: fs.serverTimestamp(),
+      });
+    },
+
+    async deleteSettlement(code, id) {
+      await fs.deleteDoc(fs.doc(db, 'groups', code, 'settlements', id));
+    },
+
+    // ───────────── Membership ─────────────
+    /** مغادرة المجموعة — تبقى المصاريف والديون كما هي */
+    async leaveGroup(code, uid) {
+      await fs.updateDoc(groupRef(code), { members: fs.arrayRemove(uid), updatedAt: fs.serverTimestamp() });
+    },
+
+    /** إزالة عضو (لمنشئ المجموعة) — تبقى مصاريفه وديونه */
+    async removeMember(code, uid) {
+      await fs.updateDoc(groupRef(code), { members: fs.arrayRemove(uid), updatedAt: fs.serverTimestamp() });
     },
   };
 }

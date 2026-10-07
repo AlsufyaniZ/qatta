@@ -8,11 +8,13 @@ rules_version = '2';
 //    • الأعضاء: قراءة
 //    • المنشئ: تعديل الاسم/الرمز + حذف المجموعة
 //    • غير العضو (يملك الرمز): يضيف نفسه فقط (انضمام)
-//    • العضو: يحدّث بياناته الظاهرة (memberInfo) فقط
+//    • العضو: يحدّث بياناته الظاهرة (memberInfo) فقط، أو يغادر
+//    • المنشئ: يزيل أي عضو (تبقى مصاريفه وديونه)
 // groups/{code}/expenses/{id}        → مصاريف المجموعة:
 //    • الأعضاء: قراءة + إضافة + تسوية الحصص
 //    • منشئ المصروف: تعديل كامل + حذف
 //    • منشئ المجموعة: حذف أي مصروف
+// groups/{code}/settlements/{id}     → تحويلات تقفيل الحساب: يضيفها الأعضاء
 // ─────────────────────────────────────────────
 
 service cloud.firestore {
@@ -76,6 +78,12 @@ service cloud.firestore {
           isMember()
           && onlyChanged(['memberInfo', 'updatedAt'])
           && onlyMyInfoChanged()
+        )
+        // المغادرة: العضو (غير المنشئ) يزيل نفسه فقط — تبقى بياناته في المصاريف
+        || (
+          isMember() && !isCreator()
+          && onlyChanged(['members', 'updatedAt'])
+          && request.resource.data.members.toSet() == resource.data.members.toSet().difference([request.auth.uid].toSet())
         );
 
       allow delete: if isCreator();
@@ -121,6 +129,33 @@ service cloud.firestore {
         allow delete: if signedIn() && (
           resource.data.createdBy == request.auth.uid
           || group().createdBy == request.auth.uid
+        );
+      }
+
+      // ── Settlements (تقفيل الحساب): تحويل من شخص لآخر ──
+      match /settlements/{settlementId} {
+
+        function sGroup() {
+          return get(/databases/$(database)/documents/groups/$(code)).data;
+        }
+
+        function sInGroup() {
+          return signedIn() && request.auth.uid in sGroup().members;
+        }
+
+        allow read: if sInGroup();
+
+        allow create: if sInGroup()
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.from is string
+          && request.resource.data.to is string
+          && request.resource.data.from != request.resource.data.to
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0 && request.resource.data.amount < 100000000;
+
+        allow delete: if signedIn() && (
+          resource.data.createdBy == request.auth.uid
+          || sGroup().createdBy == request.auth.uid
         );
       }
     }

@@ -1,16 +1,17 @@
 // ─────────────────────────────────────────────
 // Qatta (قطة) — App entry + router
-// المسارات: #/ (المجموعات) · #/group/CODE · #/settings · #/profile
+// المسارات: #/ (المجموعات) · #/group/CODE · #/stats/CODE · #/settings · #/profile
 // ─────────────────────────────────────────────
 import { firebaseConfig } from './config.js';
 import { createDemoBackend } from './backend/demo.js';
-import { toast, errorMessage } from './ui.js';
+import { toast, errorMessage, ensureRiyalFont } from './ui.js';
 import { memberInfoFrom } from './models.js';
 import { mountAuth } from './views/auth.js';
 import { mountProfile } from './views/profile.js';
 import { mountHome } from './views/home.js';
 import { mountGroup } from './views/group.js';
 import { mountSettings } from './views/settings.js';
+import { mountStats } from './views/stats.js';
 
 const root = document.getElementById('app');
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -23,15 +24,18 @@ const state = {
   groupsLoaded: false,
   expenses: new Map(),     // code → [expense]
   expLoaded: new Set(),    // codes loaded
+  settlements: new Map(),  // code → [settlement]
   expanded: new Set(),
   filter: 'all',
   period: '1m',
+  statsPeriod: '1m',
+  groupTab: 'expenses',
 };
 
 let current = null;              // { update?, destroy? }
 let controller = null;           // AbortController للشاشة الحالية
 let unsubGroups = null;
-const unsubExp = new Map();      // code → unsubscribe
+const unsubExp = new Map();      // code → unsubscribe (expenses + settlements)
 
 const ctx = {
   state,
@@ -67,7 +71,7 @@ function stopData() {
   unsubGroups?.(); unsubGroups = null;
   unsubExp.forEach(u => u()); unsubExp.clear();
   state.groups = []; state.groupsLoaded = false;
-  state.expenses.clear(); state.expLoaded.clear(); state.expanded.clear();
+  state.expenses.clear(); state.expLoaded.clear(); state.expanded.clear(); state.settlements.clear();
 }
 
 function startData() {
@@ -77,13 +81,17 @@ function startData() {
     state.groupsLoaded = true;
     const codes = new Set(groups.map(g => g.id));
     // أوقف الاشتراكات في المجموعات المحذوفة/المغادَرة
-    for (const [code, u] of unsubExp) if (!codes.has(code)) { u(); unsubExp.delete(code); state.expenses.delete(code); state.expLoaded.delete(code); }
+    for (const [code, u] of unsubExp) if (!codes.has(code)) { u(); unsubExp.delete(code); state.expenses.delete(code); state.expLoaded.delete(code); state.settlements.delete(code); }
     // اشترك في مصاريف المجموعات الجديدة
     for (const code of codes) {
       if (unsubExp.has(code)) continue;
-      unsubExp.set(code, ctx.backend.subscribeExpenses(code,
+      const u1 = ctx.backend.subscribeExpenses(code,
         (list) => { state.expenses.set(code, list); state.expLoaded.add(code); current?.update?.(); },
-        (e) => console.warn('[Qatta] expenses', code, e)));
+        (e) => console.warn('[Qatta] expenses', code, e));
+      const u2 = ctx.backend.subscribeSettlements(code,
+        (list) => { state.settlements.set(code, list); current?.update?.(); },
+        (e) => console.warn('[Qatta] settlements', code, e));
+      unsubExp.set(code, () => { u1(); u2(); });
     }
     current?.update?.();
   }, (e) => {
@@ -101,6 +109,7 @@ function route() {
   startData();
   const [page, arg] = location.hash.replace(/^#\/?/, '').split('/');
   if (page === 'group' && arg) show(mountGroup, decodeURIComponent(arg));
+  else if (page === 'stats' && arg) show(mountStats, decodeURIComponent(arg));
   else if (page === 'settings') show(mountSettings);
   else if (page === 'profile') show(mountProfile, { edit: true });
   else show(mountHome);
@@ -118,7 +127,7 @@ async function boot() {
   }
 
   const configured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
-  const splash = sleep(1200);
+  const splash = Promise.all([sleep(1200), ensureRiyalFont()]);
   try {
     if (configured && !params.has('demo')) {
       const { createFirebaseBackend } = await import('./backend/firebase.js');

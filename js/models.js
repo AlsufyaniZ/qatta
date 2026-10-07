@@ -19,16 +19,14 @@ export const category = (id) => CATEGORIES.find(c => c.id === id) || CATEGORIES[
 export const T = {
   owedToMe: 'الفلوس اللي لي',
   iOwe: 'الفلوس اللي علي',
-  paid: 'مدفوع',
+  closing: 'تقفيل الحساب',
 };
 
-/** فلاتر قائمة المصاريف داخل المجموعة */
-export const FILTERS = [
-  { id: 'all',      label: 'الكل' },
-  { id: 'iOwe',     label: T.iOwe },
-  { id: 'owedToMe', label: T.owedToMe },
-  { id: 'settled',  label: T.paid },
-];
+/** ألوان الفئات (ثابتة لكل فئة — اللون يتبع الفئة لا ترتيبها) */
+export const CATEGORY_COLORS = {
+  light: { food: '#2a78d6', transport: '#eb6834', housing: '#1baf7a', entertainment: '#eda100', shopping: '#e87ba4', travel: '#008300', health: '#4a3aa7', other: '#e34948' },
+  dark:  { food: '#3987e5', transport: '#d95926', housing: '#199e70', entertainment: '#c98500', shopping: '#d55181', travel: '#008300', health: '#9085e9', other: '#e66767' },
+};
 
 /** المدى الزمني للمصاريف الإجمالية */
 export const PERIODS = [
@@ -39,6 +37,7 @@ export const PERIODS = [
   { id: '12m', label: 'سنة',      months: 12 },
   { id: 'all', label: 'الكل',     months: null },
 ];
+export const STATS_PERIODS = PERIODS.filter(p => p.months);
 export function periodStart(periodId) {
   const p = PERIODS.find(x => x.id === periodId);
   if (!p || !p.months) return null;
@@ -137,23 +136,68 @@ export const myParticipant = (exp, me) => exp.participants.find(p => isMe(p, me)
 export const iAmPayer = (exp, me) => exp.paidByUserId === me.uid;
 export const payerOf = (exp) => exp.participants.find(p => p.id === exp.paidByUserId);
 
-export const settledAmount = (exp) => exp.participants.filter(p => p.isPaid).reduce((s, p) => s + (p.shareAmount || 0), 0);
-export const remainingAmount = (exp) => round2(exp.totalAmount - settledAmount(exp));
-export const isFullySettled = (exp) => exp.participants.every(p => p.isPaid);
+/** فروقات التقريب أقل من 10 هللات تُهمل في التسوية */
+export const SETTLE_EPS = 0.1;
+export const isZero = (n) => Math.abs(n) < SETTLE_EPS;
 
-/** الأرصدة المستحقة (كل الفترات) */
-export function balances(expenses, me) {
-  let owedToMe = 0, iOwe = 0;
-  for (const exp of expenses) {
-    if (iAmPayer(exp, me)) {
-      for (const p of exp.participants) if (!isMe(p, me) && !p.isPaid) owedToMe += p.shareAmount || 0;
-    } else {
-      const mine = myParticipant(exp, me);
-      if (mine && !mine.isPaid) iOwe += mine.shareAmount || 0;
+/**
+ * صافي كل شخص في المجموعة = ما دفعه − حصته من المصاريف + ما حوّله − ما استلمه
+ * موجب: له فلوس عند الآخرين · سالب: عليه فلوس
+ * التسوية {from, to, amount}: from حوّل إلى to
+ */
+export function groupNets(expenses = [], settlements = [], group = null) {
+  const nets = new Map();
+  const info = (group && group.memberInfo) || {};
+  const touch = (id, p) => {
+    if (!nets.has(id)) {
+      const i = info[id] || p || {};
+      nets.set(id, {
+        id, net: 0, name: i.name || 'عضو', avatarColor: i.avatarColor || '#A9AECB', phone: i.phone || '',
+        isGuest: !!(p && p.isGuest), isMember: !!group?.members?.includes(id),
+      });
     }
+    return nets.get(id);
+  };
+  for (const m of (group?.members || [])) touch(m);
+  for (const e of expenses) {
+    const payer = e.participants.find(p => p.id === e.paidByUserId);
+    touch(e.paidByUserId, payer).net += e.totalAmount || 0;
+    for (const p of e.participants) touch(p.id, p).net -= p.shareAmount || 0;
   }
-  owedToMe = round2(owedToMe); iOwe = round2(iOwe);
-  return { owedToMe, iOwe, net: round2(owedToMe - iOwe) };
+  for (const s of settlements) {
+    touch(s.from, { name: s.fromName }).net += s.amount;
+    touch(s.to, { name: s.toName }).net -= s.amount;
+  }
+  for (const v of nets.values()) v.net = round2(v.net);
+  return nets;
+}
+
+/** أقل عدد من التحويلات: مطابقة أكبر مدين مع أكبر دائن */
+export function simplifyDebts(nets) {
+  const cred = [], debt = [];
+  for (const v of nets.values()) {
+    if (v.net >= SETTLE_EPS) cred.push({ ...v, left: v.net });
+    else if (v.net <= -SETTLE_EPS) debt.push({ ...v, left: -v.net });
+  }
+  cred.sort((a, b) => b.left - a.left);
+  debt.sort((a, b) => b.left - a.left);
+  const out = [];
+  let i = 0, j = 0;
+  while (i < debt.length && j < cred.length) {
+    const amt = round2(Math.min(debt[i].left, cred[j].left));
+    if (amt >= SETTLE_EPS) out.push({ from: debt[i], to: cred[j], amount: amt });
+    debt[i].left = round2(debt[i].left - amt);
+    cred[j].left = round2(cred[j].left - amt);
+    if (debt[i].left < SETTLE_EPS) i++;
+    if (cred[j].left < SETTLE_EPS) j++;
+  }
+  return out;
+}
+
+/** رصيدي في مجموعة بعد التسوية الصافية */
+export function myBalance(expenses, settlements, group, me) {
+  const net = groupNets(expenses, settlements, group).get(me.uid)?.net || 0;
+  return { net: isZero(net) ? 0 : net, owedToMe: net >= SETTLE_EPS ? net : 0, iOwe: net <= -SETTLE_EPS ? -net : 0 };
 }
 
 /** إجمالي المصاريف وحصتي ضمن فترة */
@@ -165,22 +209,26 @@ export function periodTotals(expenses, me, periodId) {
   return { total, myShare, count: inRange.length };
 }
 
-/** فلترة قائمة المصاريف — الديون غير المدفوعة تُعرض لكل الفترات */
-export function filterExpenses(expenses, filter, me, periodId) {
-  const byDate = (a, b) => b.createdAt - a.createdAt;
+/** المصاريف حسب الفئة لفترة (للإحصائيات) */
+export function categoryBreakdown(expenses, periodId) {
   const start = periodStart(periodId);
-  const inPeriod = (e) => !start || e.createdAt >= start;
-  let list;
-  if (filter === 'iOwe') {
-    list = expenses.filter(e => !iAmPayer(e, me) && e.participants.some(p => isMe(p, me) && !p.isPaid));
-  } else if (filter === 'owedToMe') {
-    list = expenses.filter(e => iAmPayer(e, me) && e.participants.some(p => !isMe(p, me) && !p.isPaid));
-  } else if (filter === 'settled') {
-    list = expenses.filter(e => isFullySettled(e) && inPeriod(e));
-  } else {
-    list = expenses.filter(inPeriod);
+  const list = start ? expenses.filter(e => e.createdAt >= start) : expenses;
+  const sums = new Map();
+  for (const e of list) {
+    const c = e.category || 'other';
+    sums.set(c, (sums.get(c) || 0) + (e.totalAmount || 0));
   }
-  return [...list].sort(byDate);
+  const total = round2([...sums.values()].reduce((a, b) => a + b, 0));
+  const rows = [...sums.entries()]
+    .map(([id, amount]) => ({ ...category(id), amount: round2(amount), pct: total ? amount / total : 0 }))
+    .sort((a, b) => b.amount - a.amount);
+  return { total, rows, count: list.length };
+}
+
+/** المصاريف ضمن الفترة مرتبة بالأحدث */
+export function expensesInPeriod(expenses, periodId) {
+  const start = periodStart(periodId);
+  return expenses.filter(e => !start || e.createdAt >= start).sort((a, b) => b.createdAt - a.createdAt);
 }
 
 /** معلومات العضو المعروضة داخل المجموعة */

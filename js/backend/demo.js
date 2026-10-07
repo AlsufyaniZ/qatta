@@ -3,7 +3,7 @@
 // يعمل عند ترك إعدادات Firebase فارغة أو عند فتح الرابط بـ ?demo
 // ─────────────────────────────────────────────
 
-const KEY = 'qatta-demo-v2';
+const KEY = 'qatta-demo-v3';
 const delay = (ms) => new Promise(r => setTimeout(r, ms));
 const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString();
 
@@ -31,6 +31,10 @@ function seed() {
       HOME2026: {
         name: 'قطة المنزل', emoji: '🏠', createdBy: ME, members: [ME, 'user_002'],
         memberInfo: { [ME]: M.user_001, user_002: M.user_002 }, createdAt: daysAgo(120), updatedAt: daysAgo(1),
+        settlements: [
+          { id: 's2', from: 'user_002', to: ME, amount: 1500, fromName: M.user_002.name, toName: M.user_001.name, createdBy: 'user_002', createdAt: daysAgo(38) },
+          { id: 's3', from: ME, to: 'user_002', amount: 172.5, fromName: M.user_001.name, toName: M.user_002.name, createdBy: ME, createdAt: daysAgo(90) },
+        ],
         expenses: [
           exp('e1', 'كارفور - تسوق شهري', 850, 'shopping', 'user_002', [P(ME, 425, false), P('user_002', 425, true)], 5),
           exp('e2', 'فاتورة الكهرباء', 460, 'housing', ME, [P(ME, 230, true), P('user_002', 230, false)], 12),
@@ -41,6 +45,9 @@ function seed() {
       ISTRAHA7: {
         name: 'قطة الاستراحة', emoji: '🏕️', createdBy: 'user_003', members: ['user_003', ME, 'user_004'],
         memberInfo: { user_003: M.user_003, [ME]: M.user_001, user_004: M.user_004 }, createdAt: daysAgo(60), updatedAt: daysAgo(2),
+        settlements: [
+          { id: 's4', from: 'user_004', to: 'user_003', amount: 50, fromName: M.user_004.name, toName: M.user_003.name, createdBy: 'user_004', createdAt: daysAgo(8) },
+        ],
         expenses: [
           exp('e5', 'عشاء في مطعم البيك', 240, 'food', ME, [P(ME, 80, true), P('user_003', 80, false), P('user_004', 80, false)], 2, 'احتفال عيد ميلاد خالد'),
           exp('e6', 'حطب وفحم', 150, 'other', 'user_003', [P('user_003', 50, true), P(ME, 50, false), P('user_004', 50, true)], 9),
@@ -49,6 +56,7 @@ function seed() {
       TRIP9DMM: {
         name: 'قطة السفر', emoji: '✈️', createdBy: ME, members: [ME, 'user_003', 'user_004'],
         memberInfo: { [ME]: M.user_001, user_003: M.user_003, user_004: M.user_004 }, createdAt: daysAgo(200), updatedAt: daysAgo(150),
+        settlements: [{ id: 's1', from: 'user_003', to: ME, amount: 400, fromName: M.user_003.name, toName: M.user_001.name, createdBy: 'user_003', createdAt: daysAgo(140) }],
         expenses: [
           exp('e7', 'رحلة الدمام - الفندق', 1200, 'travel', ME, [P(ME, 400, true), P('user_003', 400, true), P('user_004', 400, false)], 150),
         ],
@@ -68,6 +76,7 @@ export function createDemoBackend() {
   const authL = new Set();
   const groupL = new Set();
   const expL = new Map(); // code → Set(cb)
+  const setL = new Map(); // code → Set(cb)
 
   const reviveG = (code, g) => ({ id: code, name: g.name, emoji: g.emoji, createdBy: g.createdBy, members: [...g.members],
     memberInfo: JSON.parse(JSON.stringify(g.memberInfo)), createdAt: new Date(g.createdAt), updatedAt: new Date(g.updatedAt) });
@@ -76,6 +85,8 @@ export function createDemoBackend() {
 
   const emitAuth = () => { const u = db.session ? { ...DEMO_USER } : null; authL.forEach(cb => cb(u)); };
   const emitGroups = () => { const l = myGroups(); groupL.forEach(cb => cb(l)); };
+  const reviveS = (x) => ({ ...x, createdAt: new Date(x.createdAt) });
+  const emitSet = (code) => { const l = (db.groups[code]?.settlements || []).map(reviveS); setL.get(code)?.forEach(cb => cb(l)); };
   const emitExp = (code) => { const l = (db.groups[code]?.expenses || []).map(reviveE); expL.get(code)?.forEach(cb => cb(l)); };
   const fail = (code) => { const e = new Error(code); e.code = code; throw e; };
   const login = () => { db.session = true; persist(); emitAuth(); };
@@ -103,7 +114,7 @@ export function createDemoBackend() {
     async createGroup(code, { name, emoji }, uid, info) {
       await delay(300);
       const now = new Date().toISOString();
-      db.groups[code] = { name, emoji, createdBy: uid, members: [uid], memberInfo: { [uid]: info }, createdAt: now, updatedAt: now, expenses: [] };
+      db.groups[code] = { name, emoji, createdBy: uid, members: [uid], memberInfo: { [uid]: info }, createdAt: now, updatedAt: now, expenses: [], settlements: [] };
       persist(); emitGroups();
     },
     async joinGroup(code, uid, info) {
@@ -128,11 +139,38 @@ export function createDemoBackend() {
       db.groups[code].updatedAt = now;
       persist(); emitExp(code); emitGroups();
     },
-    async updateParticipants(code, id, participants) {
+    async updateExpense(code, id, data) {
       const e = db.groups[code]?.expenses.find(x => x.id === id);
       if (!e) return;
-      e.participants = participants; e.updatedAt = new Date().toISOString();
+      const { createdAt, id: _i, ...rest } = data;
+      Object.assign(e, rest, { updatedAt: new Date().toISOString() });
       persist(); emitExp(code);
+    },
+    subscribeSettlements(code, onData) {
+      if (!setL.has(code)) setL.set(code, new Set());
+      setL.get(code).add(onData);
+      setTimeout(() => onData((db.groups[code]?.settlements || []).map(reviveS)), 150);
+      return () => setL.get(code)?.delete(onData);
+    },
+    async addSettlement(code, x) {
+      const g = db.groups[code]; if (!g) return;
+      (g.settlements ||= []).push({ ...x, id: 's_' + Math.random().toString(36).slice(2, 9), createdAt: new Date().toISOString() });
+      persist(); emitSet(code);
+    },
+    async deleteSettlement(code, id) {
+      const g = db.groups[code]; if (!g) return;
+      g.settlements = (g.settlements || []).filter(x => x.id !== id);
+      persist(); emitSet(code);
+    },
+    async leaveGroup(code, uid) {
+      const g = db.groups[code]; if (!g) return;
+      g.members = g.members.filter(m => m !== uid);
+      persist(); emitGroups();
+    },
+    async removeMember(code, uid) {
+      const g = db.groups[code]; if (!g) return;
+      g.members = g.members.filter(m => m !== uid);
+      persist(); emitGroups();
     },
     async deleteExpense(code, id) {
       db.groups[code].expenses = db.groups[code].expenses.filter(x => x.id !== id);
@@ -141,7 +179,7 @@ export function createDemoBackend() {
 
     async resetDemo() {
       const s = db.session; db = seed(); db.session = s; persist();
-      emitGroups(); for (const c of expL.keys()) emitExp(c);
+      emitGroups(); for (const c of expL.keys()) emitExp(c); for (const c of setL.keys()) emitSet(c);
     },
   };
 }
