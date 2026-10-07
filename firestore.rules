@@ -1,0 +1,71 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────
+// Qatta (قطة) — Cloud Firestore Security Rules
+//
+// users/{uid}        → الملف الشخصي، لا يقرؤه أو يعدّله إلا صاحبه
+// expenses/{id}      → المصروف:
+//    • المالك (ownerId)   : قراءة + تعديل + حذف
+//    • المشارك (بريده الموثّق ضمن memberEmails) : قراءة + تحديث حالة التسوية فقط
+// ─────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // ── User profiles ──
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // ── Expenses ──
+    match /expenses/{expenseId} {
+
+      function isOwner() {
+        return signedIn() && resource.data.ownerId == request.auth.uid;
+      }
+
+      // المشارك يجب أن يكون بريده موثّقاً حتى لا ينتحل أحد بريد شخص آخر
+      function isMember() {
+        return signedIn()
+          && request.auth.token.email_verified == true
+          && request.auth.token.email in resource.data.memberEmails;
+      }
+
+      function validExpense(d) {
+        return d.title is string && d.title.size() > 0 && d.title.size() <= 120
+          && d.totalAmount is number && d.totalAmount > 0 && d.totalAmount < 100000000
+          && d.currency is string
+          && d.category is string
+          && d.splitMethod in ['equal', 'custom', 'percentage']
+          && d.participants is list && d.participants.size() >= 2 && d.participants.size() <= 50
+          && d.memberEmails is list && d.memberEmails.size() <= 50;
+      }
+
+      allow read: if isOwner() || isMember();
+
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.paidByUserId == request.auth.uid
+        && validExpense(request.resource.data);
+
+      // المالك: يعدّل كل شيء عدا الملكية والدافع
+      // المشارك: يعدّل قائمة المشاركين (التسوية) فقط دون تغيير عددهم
+      allow update: if (
+          isOwner()
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.paidByUserId == resource.data.paidByUserId
+          && validExpense(request.resource.data)
+        ) || (
+          isMember()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants', 'updatedAt'])
+          && request.resource.data.participants.size() == resource.data.participants.size()
+        );
+
+      allow delete: if isOwner();
+    }
+  }
+}
